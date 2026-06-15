@@ -13,12 +13,31 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            // Nombres y Apellidos separados (Estándar RENIEC)
+            $table->string('first_name');      // Nombres
+            $table->string('paternal_surname'); // Apellido Paterno
+            $table->string('maternal_surname'); // Apellido Materno
+
+            // Datos de Identificación y Contacto
+            $table->string('dni', 8)->unique(); // DNI exacto de 8 dígitos para Perú
+            $table->string('phone', 9)->nullable();
+
+            // Autenticación y Credenciales
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+
+            // Control Operativo de Estado
+            $table->enum('status', ['Activo', 'Inactivo'])->default('Activo');
+
+            // Almacenamiento de la firma digital (Ruta de la imagen PNG de la firma)
+            $table->string('signature_path')->nullable();
+
             $table->rememberToken();
             $table->timestamps();
+
+            // Soft Deletes: Crea la columna 'deleted_at' para despidos/retiros sin perder datos
+            $table->softDeletes();
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

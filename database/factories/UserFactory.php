@@ -24,15 +24,24 @@ class UserFactory extends Factory
      */
     public function definition(): array
     {
-        return [
-            'name' => fake()->name(),
+       return [
+            // Reemplazamos 'name' por los campos atómicos peruanos usando Faker
+            'first_name' => fake()->firstName(),
+            'paternal_surname' => fake()->lastName(),
+            'maternal_surname' => fake()->lastName(),
+            
+            // Generamos un DNI aleatorio único de 8 dígitos para las pruebas
+            'dni' => fake()->unique()->numerify('########'),
+            'phone' => fake()->optional()->numerify('9########'),
+            
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
+            
+            // Contraseña por defecto para usuarios faker (password)
             'password' => static::$password ??= Hash::make('password'),
+            
+            'status' => 'Activo',
             'remember_token' => Str::random(10),
-            'two_factor_secret' => null,
-            'two_factor_recovery_codes' => null,
-            'two_factor_confirmed_at' => null,
         ];
     }
 

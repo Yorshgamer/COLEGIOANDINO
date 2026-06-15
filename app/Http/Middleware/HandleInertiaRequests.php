@@ -39,7 +39,16 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $request->user() ? [
+                    'id' => $request->user()->id,
+                    'name' => $request->user()->name,
+                    'email' => $request->user()->email,
+                    // Inyectamos los roles de Spatie en un Array limpio de Strings
+                    'roles' => $request->user()->getRoleNames(), 
+                    // Opcional: Inyectamos los permisos atómicos por si los necesitas en el frontend
+                    'permissions' => $request->user()->getAllPermissions()->pluck('name'),
+                    'signature_path' => $request->user()->signature_path ? asset('storage/' . $request->user()->signature_path) : null,
+                ] : null,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

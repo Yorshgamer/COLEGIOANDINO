@@ -41,27 +41,28 @@ onMounted(async () => {
 <template>
     <Card class="w-full">
         <CardHeader>
-            <CardTitle class="flex gap-3">
-                <LockKeyhole class="size-4" />2FA recovery codes
+            <CardTitle class="flex gap-3 text-sm font-bold uppercase tracking-wider">
+                <LockKeyhole class="size-4 text-amber-500" /> Códigos de recuperación para emergencias
             </CardTitle>
             <CardDescription>
-                Recovery codes let you regain access if you lose your 2FA
-                device. Store them in a secure password manager.
+                Los códigos de recuperación te permiten recuperar el acceso a tu cuenta si pierdes, 
+                te roban o cambias tu teléfono móvil. Guárdalos en un administrador de contraseñas seguro.
             </CardDescription>
         </CardHeader>
         <CardContent>
             <div
                 class="flex flex-col gap-3 select-none sm:flex-row sm:items-center sm:justify-between"
             >
-                <Button @click="toggleRecoveryCodesVisibility" class="w-fit">
+                <!-- Botón Mostrar / Ocultar -->
+                <Button @click="toggleRecoveryCodesVisibility" variant="outline" class="w-fit text-xs">
                     <component
                         :is="isRecoveryCodesVisible ? EyeOff : Eye"
-                        class="size-4"
+                        class="size-4 mr-1.5"
                     />
-                    {{ isRecoveryCodesVisible ? 'Hide' : 'View' }} recovery
-                    codes
+                    {{ isRecoveryCodesVisible ? 'Ocultar' : 'Visualizar' }} códigos de respaldo
                 </Button>
 
+                <!-- Botón Regenerar nuevos códigos -->
                 <Form
                     v-if="isRecoveryCodesVisible && recoveryCodesList.length"
                     v-bind="regenerateRecoveryCodes.form()"
@@ -74,11 +75,14 @@ onMounted(async () => {
                         variant="secondary"
                         type="submit"
                         :disabled="processing"
+                        class="text-xs"
                     >
-                        <RefreshCw /> Regenerate codes
+                        <RefreshCw class="size-3.5 mr-1.5 animate-hover" /> Regenerar nuevos códigos
                     </Button>
                 </Form>
             </div>
+
+            <!-- Panel desplegable de códigos -->
             <div
                 :class="[
                     'relative overflow-hidden transition-all duration-300',
@@ -93,28 +97,31 @@ onMounted(async () => {
                 <div v-else class="mt-3 space-y-3">
                     <div
                         ref="recoveryCodeSectionRef"
-                        class="grid gap-1 rounded-lg bg-muted p-4 font-mono text-sm"
+                        class="grid grid-cols-2 gap-2 rounded-lg bg-muted p-4 font-mono text-sm text-center tracking-wider border"
                     >
-                        <div v-if="!recoveryCodesList.length" class="space-y-2">
+                        <!-- Efecto esqueleto de carga -->
+                        <div v-if="!recoveryCodesList.length" class="col-span-2 space-y-2">
                             <div
-                                v-for="n in 8"
+                                v-for="n in 4"
                                 :key="n"
                                 class="h-4 animate-pulse rounded bg-muted-foreground/20"
                             ></div>
                         </div>
+                        
+                        <!-- Listado de códigos -->
                         <div
                             v-else
                             v-for="(code, index) in recoveryCodesList"
                             :key="index"
+                            class="p-1 bg-background/50 dark:bg-neutral-900/50 rounded border border-neutral-200/50 select-text font-semibold text-neutral-800 dark:text-neutral-200"
                         >
                             {{ code }}
                         </div>
                     </div>
-                    <p class="text-xs text-muted-foreground select-none">
-                        Each recovery code can be used once to access your
-                        account and will be removed after use. If you need more,
-                        click
-                        <span class="font-bold">Regenerate codes</span> above.
+                    <p class="text-[11px] text-muted-foreground select-none">
+                        Cada código de recuperación se puede usar **una sola vez** para iniciar sesión en tu cuenta y se 
+                        invalidará automáticamente después de su uso. Si necesitas más códigos, haz clic en el botón 
+                        <span class="font-bold">Regenerar nuevos códigos</span> de la parte superior.
                     </p>
                 </div>
             </div>

@@ -48,15 +48,6 @@ class ProfileController extends Controller
      */
     public function destroy(ProfileDeleteRequest $request): RedirectResponse
     {
-        $user = $request->user();
-
-        Auth::logout();
-
-        $user->delete();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return redirect('/');
+       abort(403, 'Acción no autorizada. La eliminación de cuentas es gestionada por TI/Administración.');
     }
 }
