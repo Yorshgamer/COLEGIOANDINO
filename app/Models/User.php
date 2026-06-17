@@ -15,7 +15,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
-* @property int $id
+ * @property int $id
  * @property string $first_name
  * @property string $paternal_surname
  * @property string $maternal_surname
@@ -24,6 +24,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $email
  * @property string $status
  * @property Carbon|null $email_verified_at
+ * @property Carbon|null $last_login_at  <-- 1. AÑADIDO PARA AUTOCUBRIR EL TIPADO INTERNO
  * @property string $password
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
@@ -43,7 +44,8 @@ use Spatie\Permission\Traits\HasRoles;
     'email', 
     'password', 
     'status',
-    'signature_path'
+    'signature_path',
+    'last_login_at' // <-- 2. PERMITIMOS LA ESCRITURA MASIVA DESDE EL EVENTO DE LOGIN
 ])]
 
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
@@ -54,6 +56,7 @@ class User extends Authenticatable
     use HasFactory, Notifiable, TwoFactorAuthenticatable, HasRoles, SoftDeletes;
 
     protected $appends = ['name'];
+
     /**
      * Get the attributes that should be cast.
      *
@@ -65,6 +68,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'last_login_at' => 'datetime', // <-- 3. CASTEO AUTOMÁTICO A CARBON PARA EVITAR ERRORES DE STRING
         ];
     }
 

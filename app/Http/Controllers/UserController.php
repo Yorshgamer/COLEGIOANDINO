@@ -90,22 +90,21 @@ class UserController extends Controller
      */
     public function update(Request $request, User $user)
     {
-        // Corregimos la validación para procesar las nuevas columnas segmentadas
+        // Añadimos la regla para password como opcional (nullable)
         $request->validate([
             'first_name' => 'required|string|max:255',
             'paternal_surname' => 'required|string|max:255',
             'maternal_surname' => 'required|string|max:255',
-            // El DNI debe ser único pero ignorando al propio usuario que se está editando
             'dni' => 'required|string|size:8|unique:users,dni,' . $user->id,
             'phone' => 'nullable|string|max:15',
-            // El correo debe ser único pero ignorando el del usuario actual
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'role' => 'required|string',
-            'status' => 'required|in:Activo,Inactivo'
+            'status' => 'required|in:Activo,Inactivo',
+            'password' => 'nullable|string|min:6' // <-- Regla nullable añadida
         ]);
 
-        // Actualizamos físicamente los campos mapeados en tu nuevo modelo de atributos
-        $user->update([
+        // Armamos el lote de actualización base
+        $updateData = [
             'first_name' => $request->first_name,
             'paternal_surname' => $request->paternal_surname,
             'maternal_surname' => $request->maternal_surname,
@@ -113,12 +112,20 @@ class UserController extends Controller
             'phone' => $request->phone,
             'email' => $request->email,
             'status' => $request->status,
-        ]);
+        ];
 
-        // Sincronizar el nuevo rol de Spatie (reemplaza los anteriores de forma limpia)
+        // CONDICIONAL CRÍTICA: Si el administrador digitó una contraseña, la encriptamos y la sumamos al lote
+        if ($request->filled('password')) {
+            $updateData['password'] = \Illuminate\Support\Facades\Hash::make($request->password);
+        }
+
+        // Ejecutamos la actualización atómica
+        $user->update($updateData);
+
+        // Sincronizar el nuevo rol de Spatie de forma limpia
         $user->syncRoles([$request->role]);
 
-        return redirect()->route('users.index')->with('success', 'Usuario actualizado con éxito.');
+        return redirect()->route('users.index')->with('success', 'Usuario y credenciales actualizados con éxito.');
     }
 
     /**

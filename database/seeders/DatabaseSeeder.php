@@ -21,20 +21,41 @@ class DatabaseSeeder extends Seeder
             RolesAndPermissionsSeeder::class,
         ]);
 
-        // 2. Ahora creamos el usuario Administrador Inicial
+        // 2. Ahora creamos usuario
         $admin = User::create([
             'first_name' => 'Admin',
             'paternal_surname' => 'Colegio',
             'maternal_surname' => 'Andino',
-            'dni' => '00000000',
+            'dni' => '75707785',
             'email' => 'admin@admin.com',
             'password' => Hash::make('adminadmin'),
             'status' => 'Activo',
         ]);
 
+        $yoyo = User::create([
+            'first_name' => 'yoyo',
+            'paternal_surname' => 'villena',
+            'maternal_surname' => 'ochoa',
+            'dni' => '12345678',
+            'email' => 'asd@gmail.com',
+            'password' => Hash::make('asdasdasd'),
+            'status' => 'Activo',
+        ]);
+
+        $yoyo2 = User::create([
+            'first_name' => 'yoyo2',
+            'paternal_surname' => 'villena2',
+            'maternal_surname' => 'ochoa2',
+            'dni' => '99999999',
+            'email' => 'asd2@gmail.com',
+            'password' => Hash::make('asdasdasd'),
+            'status' => 'Activo',
+        ]);
+
         // 3. Le asignamos el rol de Administrador que se creó en el paso 1
         $admin->assignRole('Administrador');
+        $yoyo->assignRole('Usuario');
+        $yoyo2->assignRole('Usuario');
 
-        User::factory(30)->create();
     }
 }

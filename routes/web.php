@@ -30,14 +30,28 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // --- MÓDULO DE BOLETAS DE PAGO, GRATIFICACIONES Y CTS ---
     Route::get('/boletas', [BoletaController::class, 'index'])->name('boletas.index');
+    Route::get('/mis-boletas', [BoletaController::class, 'misBoletas'])->name('boletas.mis_boletas');
     Route::get('/boletas/create', [BoletaController::class, 'create'])->name('boletas.create'); // Nueva vista de carga masiva
     Route::post('/boletas/carga-masiva', [BoletaController::class, 'storeMasivo'])->name('boletas.store_masivo'); // Procesamiento parser
+
     Route::get('/boletas/{boleta}', [BoletaController::class, 'show'])->name('boletas.show');
     Route::delete('/boletas/{boleta}', [BoletaController::class, 'destroy'])->name('boletas.destroy');
     Route::post('/boletas/{boleta}/notificar', [BoletaController::class, 'notificar'])->name('boletas.notificar');
     Route::post('/boletas/{boleta}/firmar', [BoletaController::class, 'firmar'])->name('boletas.firmar');
     Route::post('/boletas/{boleta}/observar', [BoletaController::class, 'observar'])->name('boletas.observar');
     Route::get('/boletas/{boleta}/descargar-raw', [BoletaController::class, 'descargarRaw'])->name('boletas.descargar_raw');
+    Route::get('/boletas/{boleta}/pdf', [BoletaController::class, 'verPdf'])->name('boletas.pdf');
+    Route::get('/boletas/{boleta}/trabajador-firma', [BoletaController::class, 'renderTrabajadorSignature'])->name('boletas.trabajador.firma');
+
+    // Ejecuta la descarga física del archivo
+    Route::get('/boletas/{boleta}/descargar', [BoletaController::class, 'descargarPdf'])->name('boletas.descargar');
+    Route::post('/profile/signature', [ProfileSignatureController::class, 'update'])->name('profile.signature.update');
+
+    // 🎯 AGREGA ESTA LÍNEA DEBAJO PARA CONECTAR EL RENDERIZADOR
+    Route::get('/profile/signature/image', [ProfileSignatureController::class, 'renderImage'])->name('profile.signature.image');
+    Route::get('/administracion/firma/sello', [ProfileSignatureController::class, 'renderAdminSignature'])->name('admin.signature.sello');
+
+    // 🎯 Endpoint para la Firma del Trabajador dueño de esta boleta
 });
 
 require __DIR__ . '/settings.php';

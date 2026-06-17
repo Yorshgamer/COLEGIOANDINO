@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { Globe, MailCheck, LifeBuoy, LayoutGrid, Users, FileSpreadsheet } from '@lucide/vue'; // Importamos FileSpreadsheet para las boletas
+import { Globe, MailCheck, LifeBuoy, LayoutGrid, Users, FileSpreadsheet, UserSquare2 } from '@lucide/vue'; // Importamos UserSquare2 para "Mis Boletas"
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -15,7 +15,6 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
-// Importamos la función de enrutamiento nativa de Wayfinder para el módulo de boletas
 import { index as boletasIndexRoute } from '@/routes/boletas';
 import type { NavItem } from '@/types';
 
@@ -30,6 +29,9 @@ interface AuthUser {
 const page = usePage();
 const authUser = page.props.auth ? (page.props.auth as any).user as AuthUser : null;
 
+// Determine si el usuario tiene privilegios de gestión
+const isAdminOrRRHH = authUser && (authUser.roles.includes('Administrador') || authUser.roles.includes('Recursos Humanos'));
+
 // --- MENÚ DE NAVEGACIÓN PRINCIPAL ---
 const mainNavItems: NavItem[] = [
     {
@@ -39,22 +41,31 @@ const mainNavItems: NavItem[] = [
     },
 ];
 
-// 1. Acceso universal al Módulo de Boletas (Profesores ven lo suyo, Admin/RRHH gestionan)
 if (authUser) {
-    mainNavItems.push({
-        title: 'Boletas de Pago',
-        href: boletasIndexRoute().url, // Extraemos la URL tipada de Wayfinder
-        icon: FileSpreadsheet,
-    });
-}
+    // 1. CONTROL DE VISIBILIDAD GESTIÓN GENERAL: Solo visible para Admin y RRHH (/boletas)
+    if (isAdminOrRRHH) {
+        mainNavItems.push({
+            title: 'Boletas de Pago',
+            href: boletasIndexRoute().url, // Historial general del plantel
+            icon: FileSpreadsheet,
+        });
+    }
 
-// 2. Acceso restrictivo a la Gestión de Usuarios (Solo Admin / RRHH)
-if (authUser && (authUser.roles.includes('Administrador') || authUser.roles.includes('Recursos Humanos'))) {
+    // 2. ACCESO UNIVERSAL: "Mis Boletas" privado visible para TODOS los roles de la institución (/mis-boletas)
     mainNavItems.push({
-        title: 'Gestión de Usuarios',
-        href: '/users', 
-        icon: Users,
+        title: 'Mis Boletas',
+        href: '/mis-boletas', // Ruta privada de firma
+        icon: UserSquare2,
     });
+
+    // 3. GESTIÓN DE USUARIOS: Restrictivo solo para Admin y RRHH (/users)
+    if (isAdminOrRRHH) {
+        mainNavItems.push({
+            title: 'Mis Empleados',
+            href: '/users',
+            icon: Users,
+        });
+    }
 }
 
 // --- ENLACES INSTITUCIONALES DEL PIE DE PÁGINA ---

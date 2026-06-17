@@ -32,7 +32,7 @@ return new class extends Migration
 
             // Almacenamiento de la firma digital (Ruta de la imagen PNG de la firma)
             $table->string('signature_path')->nullable();
-
+            $table->timestamp('last_login_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
 

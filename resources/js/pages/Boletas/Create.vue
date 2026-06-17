@@ -1,21 +1,32 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
-// 1. IMPORTACIÓN CORREGIDA: Llamamos al layout real del sistema para romper el bucle
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { UploadCloud, FileSpreadsheet, FileText, CheckCircle, AlertCircle, ArrowLeft } from '@lucide/vue';
+import { UploadCloud, FileSpreadsheet, FileText, CheckCircle, AlertCircle, ArrowLeft, User, Calendar, RefreshCw } from '@lucide/vue';
 
-// Estado reactivo local para gestionar la cola de archivos en el navegador
-const archivosSeleccionados = ref<File[]>([]);
+// Definimos la prop que viene de Laravel
+const props = defineProps<{
+    existentes: string[]; // Formato: "DNI_Tipo_Mes_Anio"
+}>();
+
+// Estructura de la cola local enriquecida con metadatos
+interface ArchivoEnCola {
+    file: File;
+    dni: string;
+    mes: string;
+    anio: number;
+    type: 'Boleta Mensual' | 'CTS';
+    yaExiste: boolean;
+}
+
+const archivosSeleccionados = ref<ArchivoEnCola[]>([]);
 const isDragging = ref(false);
 
-// Formulario reactivo de Inertia
 const form = useForm({
     archivos: [] as File[],
 });
 
-// 2. CONFIGURACIÓN DE BREADCRUMBS: Valores fijos en string para acoplarse a la barra oficial
 defineOptions({
     layout: {
         breadcrumbs: [
@@ -26,7 +37,53 @@ defineOptions({
     },
 });
 
-// Captura de archivos por explorador tradicional
+const mesesMapeo: Record<string, string> = {
+    '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril',
+    '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08' : 'Agosto',
+    '09': 'Septiembre', '10': 'Octubre', '11': 'Noviembre', '12': 'Diciembre'
+};
+
+// --- PARSER EN CLIENTE BASADO EN TU LOGICA DE BACKEND ---
+const analizarArchivo = (file: File): ArchivoEnCola => {
+    const name = file.name;
+    let dni = 'Desconocido';
+    let mes = 'Desconocido';
+    let anio = new Date().getFullYear();
+    let type: 'Boleta Mensual' | 'CTS' = 'Boleta Mensual';
+
+    // CASO 1: CTS -> CTS_DNI_PERIODO.pdf
+    if (name.toUpperCase().startsWith('CTS_')) {
+        const parts = name.replace('.pdf', '').split('_');
+        if (parts.length >= 3) {
+            dni = parts[1];
+            const periodo = parts[2];
+            anio = parseInt(periodo.substring(0, 4)) || anio;
+            const codMes = periodo.substring(4, 6);
+            mes = mesesMapeo[codMes] ?? 'Desconocido';
+            type = 'CTS';
+        }
+    } 
+    // CASO 2: PLAME -> RUC_PERIODO_TIPODOC_NUMERODOC_r08.ext
+    else {
+        const cleanName = name.replace('.pdf', '').replace('.xml', '');
+        const parts = cleanName.split('_');
+        if (parts.length >= 4) {
+            const periodo = parts[1];
+            dni = parts[3];
+            anio = parseInt(periodo.substring(0, 4)) || anio;
+            const codMes = periodo.substring(4, 6);
+            mes = mesesMapeo[codMes] ?? 'Desconocido';
+            type = 'Boleta Mensual';
+        }
+    }
+
+    // Verificamos si coincide con la matriz que enviamos desde el controlador
+    const llaveVerificacion = `${dni}_${type}_${mes}_${anio}`;
+    const yaExiste = props.existentes.includes(llaveVerificacion);
+
+    return { file, dni, mes, anio, type, yaExiste };
+};
+
 const handleFileChange = (e: Event) => {
     const target = e.target as HTMLInputElement;
     if (target.files) {
@@ -34,7 +91,6 @@ const handleFileChange = (e: Event) => {
     }
 };
 
-// Captura de archivos por arrastre (Drag & Drop)
 const handleDrop = (e: DragEvent) => {
     isDragging.value = false;
     if (e.dataTransfer && e.dataTransfer.files) {
@@ -42,28 +98,38 @@ const handleDrop = (e: DragEvent) => {
     }
 };
 
-// Validador e inyector de la cola local
 const agregarArchivos = (files: File[]) => {
     const validFiles = files.filter(file => {
         const ext = file.name.split('.').pop()?.toLowerCase();
         return ext === 'pdf' || ext === 'xml';
     });
     
-    const nombresExistentes = archivosSeleccionados.value.map(f => f.name);
-    const nuevosFiltrados = validFiles.filter(file => !nombresExistentes.includes(file.name));
-
-    archivosSeleccionados.value = [...archivosSeleccionados.value, ...nuevosFiltrados];
+    const nombresExistentes = archivosSeleccionados.value.map(item => item.file.name);
+    
+    validFiles.forEach(file => {
+        if (!nombresExistentes.includes(file.name)) {
+            archivosSeleccionados.value.push(analizarArchivo(file));
+        }
+    });
 };
 
 const removerArchivo = (index: number) => {
     archivosSeleccionados.value.splice(index, 1);
 };
 
-// Despacho del lote masivo al controlador
-const procesarLote = () => {
-    if (archivosSeleccionados.value.length === 0) return;
+// Evaluamos si hay algún duplicado estricto en cola para alertar al botón
+const tieneDuplicadosEnCola = computed(() => archivosSeleccionados.value.some(item => item.yaExiste));
 
-    form.archivos = archivosSeleccionados.value;
+const procesarLote = () => {
+    // Filtramos para enviar únicamente los archivos que NO existen en el sistema
+    const limpios = archivosSeleccionados.value.filter(item => !item.yaExiste);
+    
+    if (limpios.length === 0) {
+        alert('No hay archivos nuevos válidos para procesar en este lote.');
+        return;
+    }
+
+    form.archivos = limpios.map(item => item.file);
     form.post('/boletas/carga-masiva', {
         preserveScroll: true,
         onSuccess: () => {
@@ -89,10 +155,7 @@ const procesarLote = () => {
                 </p>
             </div>
             
-            <Link 
-                href="/boletas"
-                class="inline-flex items-center justify-center rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 shadow-xs transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800/50"
-            >
+            <Link href="/boletas" class="inline-flex items-center justify-center rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 shadow-xs transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
                 <ArrowLeft class="size-4 mr-2" /> Volver al Historial
             </Link>
         </div>
@@ -140,9 +203,9 @@ const procesarLote = () => {
                     @dragleave.prevent="isDragging = false"
                     @drop.prevent="handleDrop"
                     :class="[
-                        'border-2 border-dashed rounded-xl p-12 flex flex-col items-center justify-center gap-3 transition-colors cursor-pointer select-none',
+                        'border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center gap-3 transition-colors cursor-pointer select-none',
                         isDragging 
-                            ? 'border-amber-500 bg-amber-500/[0.02] dark:bg-amber-500/[0.01]' 
+                            ? 'border-amber-500 bg-amber-500/[0.02]' 
                             : 'border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50/50 dark:hover:bg-neutral-900/50'
                     ]"
                     @click="($refs.fileInput as HTMLInputElement).click()"
@@ -156,43 +219,73 @@ const procesarLote = () => {
                 </div>
 
                 <div v-if="archivosSeleccionados.length > 0" class="mt-6 space-y-4 animate-in fade-in duration-200">
-                    <div class="flex items-center justify-between border-b pb-2">
-                        <span class="text-xs font-bold text-neutral-600 dark:text-neutral-400">
-                            Documentos listos en cola ({{ archivosSeleccionados.length }})
-                        </span>
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 gap-2">
+                        <div class="flex flex-col">
+                            <span class="text-xs font-bold text-neutral-700 dark:text-neutral-300">
+                                Documentos en cola de inyección ({{ archivosSeleccionados.length }})
+                            </span>
+                            <span v-if="tieneDuplicadosEnCola" class="text-[10px] text-red-500 font-semibold flex items-center gap-1 mt-0.5 animate-pulse">
+                                <AlertCircle class="size-3" /> Atención: Los archivos marcados en rojo serán omitidos automáticamente.
+                            </span>
+                        </div>
                         <Button 
                             size="sm" 
                             @click="procesarLote" 
                             :disabled="form.processing" 
-                            class="bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-neutral-50 dark:text-neutral-900 dark:hover:bg-neutral-50/90 font-medium text-xs h-9 shadow-xs px-4"
+                            class="bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-neutral-50 dark:text-neutral-900 dark:hover:bg-neutral-200 font-bold text-xs h-9 shadow-xs px-4"
                         >
-                            <CheckCircle class="size-4 mr-2" /> Inyectar Lote de Planillas
+                            <CheckCircle class="size-4 mr-2" /> Inyectar Archivos Nuevos
                         </Button>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto p-1">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto p-1">
                         <div 
-                            v-for="(file, idx) in archivosSeleccionados" 
-                            :key="file.name" 
-                            class="flex items-center justify-between p-2 rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-900/30 text-xs"
+                            v-for="(item, idx) in archivosSeleccionados" 
+                            :key="item.file.name" 
+                            :class="[
+                                'flex items-center justify-between p-3 rounded-xl border transition-all relative overflow-hidden',
+                                item.yaExiste 
+                                    ? 'border-red-200 dark:border-red-950/50 bg-red-50/40 dark:bg-red-950/5 opacity-85' 
+                                    : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-2xs'
+                            ]"
                         >
-                            <div class="flex items-center gap-2 truncate pr-2">
-                                <component 
-                                    :is="file.name.endsWith('.xml') ? FileSpreadsheet : FileText" 
-                                    :class="['size-4 shrink-0', file.name.endsWith('.xml') ? 'text-teal-600 dark:text-teal-500' : 'text-rose-600 dark:text-rose-500']" 
-                                />
-                                <span class="truncate font-mono text-[11px] text-neutral-700 dark:text-neutral-300" :title="file.name">
-                                    {{ file.name }}
-                                </span>
+                            <div class="flex items-center gap-3 truncate pr-4 w-full">
+                                <div :class="['p-2 rounded-lg shrink-0', item.yaExiste ? 'bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400' : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400']">
+                                    <component 
+                                        :is="item.file.name.endsWith('.xml') ? FileSpreadsheet : FileText" 
+                                        class="size-4" 
+                                    />
+                                </div>
+                                
+                                <div class="flex flex-col truncate w-full space-y-0.5">
+                                    <span class="truncate font-mono text-[11px] font-bold text-neutral-800 dark:text-neutral-200" :title="item.file.name">
+                                        {{ item.file.name }}
+                                    </span>
+                                    
+                                    <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-neutral-400">
+                                        <span class="flex items-center gap-1 font-semibold text-neutral-500 dark:text-neutral-400">
+                                            <User class="size-3 text-neutral-400" /> DNI: {{ item.dni }}
+                                        </span>
+                                        <span class="flex items-center gap-1 font-semibold text-neutral-500 dark:text-neutral-400">
+                                            <Calendar class="size-3 text-neutral-400" /> Período: {{ item.mes }} - {{ item.anio }}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
-                            <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                @click.stop="removerArchivo(idx)" 
-                                class="size-6 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-full shrink-0"
-                            >
-                                ✕
-                            </Button>
+
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span v-if="item.yaExiste" class="text-[9px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-400 border border-red-200/50 dark:border-red-900/30 whitespace-nowrap">
+                                    Ya cargado
+                                </span>
+                                <Button 
+                                    size="icon" 
+                                    variant="ghost" 
+                                    @click.stop="removerArchivo(idx)" 
+                                    class="size-7 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-full transition-colors"
+                                >
+                                    ✕
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </div>
