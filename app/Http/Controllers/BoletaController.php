@@ -4,12 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\Boleta;
 use App\Models\User;
+use App\Notifications\BoletaDisponibleNotification;
+use App\Notifications\CredencialesCreadasNotification;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+
 use Barryvdh\DomPDF\Facade\Pdf;
 
 /**
@@ -496,21 +502,21 @@ class BoletaController extends Controller
         /** @var \App\Models\User $authUser */
         $authUser = Auth::user();
 
-        // Control de seguridad perimetral cruzado
+        // 1. Control de seguridad perimetral cruzado
         if (!$authUser->hasAnyRole(['Administrador', 'Recursos Humanos']) && $boleta->user_id !== $authUser->id) {
             abort(403, 'Acción no autorizada.');
         }
 
         $pathLimpio = $boleta->pdf_path;
 
-        // Comprobación de existencia transparente de la API de Storage
+        // 2. Comprobación de existencia del archivo
         if (!Storage::disk('local')->exists($pathLimpio)) {
-            abort(404, 'El archivo físico original no se encuentra disponible en el almacenamiento local.');
+            abort(404, 'El archivo físico original no se encuentra disponible.');
         }
 
         $extension = strtolower(pathinfo($pathLimpio, PATHINFO_EXTENSION));
 
-        // --- SUBFLUJO 1: LECTURA DE PDF TRADICIONAL (CTS/Gratificaciones directas) ---
+        // --- SUBFLUJO 1: PDF NETO (CTS / Gratificaciones directas) ---
         if ($extension === 'pdf') {
             return response()->file(Storage::disk('local')->path($pathLimpio), [
                 'Content-Type' => 'application/pdf',
@@ -518,47 +524,112 @@ class BoletaController extends Controller
             ]);
         }
 
-        // --- SUBFLUJO 2: PARSER DINÁMICO EN CALIENTE (XML SUNAT PLAME) ---
+        // --- SUBFLUJO 2: GENERACIÓN DE PDF RECONSTRUIDO CON FILAS COMPACTAS ---
         if ($extension === 'xml') {
-            $xmlContent = Storage::disk('local')->get($pathLimpio);
+            $pathAbsoluto = Storage::disk('local')->path($pathLimpio);
 
-            // Carga segura de string XML para manipulación de nodos en el futuro
-            $xmlData = simplexml_load_string($xmlContent);
+            $reader = IOFactory::createReader('Xml');
+            $spreadsheet = $reader->load($pathAbsoluto);
+            $worksheet = $spreadsheet->getActiveSheet();
 
-            $empleado = $boleta->user;
+            $highestRow = $worksheet->getHighestRow();
+            $matrixCeldas = [];
+            $mergeCells = $worksheet->getMergeCells();
 
-            // Matriz rígida institucional simulando el balance del PDT de la SUNAT
-            $datosBoleta = [
-                'colegio' => 'COLEGIO PARTICULAR ANDINO',
-                'ruc'     => '20161572366',
-                'periodo' => "{$boleta->mes} {$boleta->anio}",
-                'tipo'    => $boleta->type,
-                'empleado' => $empleado,
-                'fecha_ingreso' => '23/03/2026',
-                'cuspp'         => '679411YVOLO7',
-                'dias_laborados' => 31,
-                'total_horas'   => 208,
-                'ingresos' => [
-                    ['codigo' => '0121', 'concepto' => 'REMUNERACIÓN O JORNAL BÁSICO', 'monto' => 1500.00],
-                    ['codigo' => '0201', 'concepto' => 'ASIGNACIÓN FAMILIAR', 'monto' => 113.00],
-                ],
-                'descuentos' => [
-                    ['codigo' => '0705', 'concepto' => 'INASISTENCIAS', 'monto' => 0.00],
-                    ['codigo' => '0706', 'concepto' => 'OTROS DESC NO DEDUC DE BASE IMPONIB', 'monto' => 56.00],
-                ],
-                'aportes' => [
-                    ['codigo' => '0601', 'concepto' => 'COMISIÓN AFP PORCENTUAL', 'monto' => 39.65],
-                    ['codigo' => '0606', 'concepto' => 'PRIMA DE SEGURO AFP', 'monto' => 20.55],
-                    ['codigo' => '0608', 'concepto' => 'SPP - APORTACIÓN OBLIGATORIA', 'monto' => 150.00],
-                ],
-                'neto_pagar' => 1376.80
-            ];
+            for ($row = 1; $row <= $highestRow; $row++) {
+                $rowData = [];
+                $isRowEmpty = true; // Evaluador axial de contenido de la fila
 
-            // Renderizamos la vista HTML estructurada estilo Excel que se inyectará en el visor
-            return view('pdf.boleta_institucional', compact('datosBoleta', 'boleta'));
+                for ($col = 2; $col <= 9; $col++) {
+                    /** @var \PhpOffice\PhpSpreadsheet\Cell\Cell $cell */
+                    $cell = $worksheet->getCell([$col, $row]);
+
+                    if ($cell->isInMergeRange() && !$cell->isMergeRangeValueCell()) {
+                        continue;
+                    }
+
+                    $colspan = 1;
+                    $rowspan = 1;
+
+                    if ($cell->isMergeRangeValueCell()) {
+                        $range = $cell->getMergeRange();
+                        [$start, $end] = Coordinate::rangeBoundaries($range);
+                        $colspan = $end[0] - $start[0] + 1;
+                        $rowspan = $end[1] - $start[1] + 1;
+                    }
+
+                    $value = $cell->getValue();
+                    $strValue = trim((string)$value);
+
+                    if ($strValue !== '') {
+                        $isRowEmpty = false;
+                    }
+
+                    // Omitimos la cadena del PDT ya que ensucia la separación del bloque superior
+                    if (str_contains($strValue, 'PDT Planilla Electrónica') || str_contains($strValue, 'Número de Orden')) {
+                        continue 2;
+                    }
+
+                    $align = "center";
+                    $isNumeric = false;
+                    $isHeaderInfo = false;
+
+                    if (str_starts_with($strValue, 'RUC :') || str_starts_with($strValue, 'Empleador :') || str_starts_with($strValue, 'Periodo :')) {
+                        $align = "left";
+                        $isHeaderInfo = true;
+                        $value = str_replace(' :', ':', $value);
+                    } elseif ($cell->getDataType() === DataType::TYPE_NUMERIC) {
+                        $align = "right";
+                        $value = number_format((float) $value, 2);
+                        $isNumeric = true;
+                    } elseif ($col === 3 && $row >= 13) {
+                        $align = "left";
+                    }
+
+                    $style = $worksheet->getStyle([$col, $row]);
+                    $fillColor = $style->getFill()->getStartColor()->getRGB();
+                    $bgColor = ($fillColor && $fillColor !== '000000' && $fillColor !== 'FFFFFF') ? "#{$fillColor}" : "#ffffff";
+
+                    if ($isHeaderInfo) {
+                        $bgColor = "#DBE5F1";
+                    }
+
+                    $rowData[$col] = [
+                        'value'         => $value,
+                        'align'         => $align,
+                        'bg_color'      => $bgColor,
+                        'colspan'       => $colspan,
+                        'rowspan'       => $rowspan,
+                        'is_numeric'    => $isNumeric,
+                        'is_header_info' => $isHeaderInfo
+                    ];
+                }
+
+                // 🎯 EXPLICACIÓN: Guardamos absolutamente TODAS las filas, pero si no contiene datos
+                // le inyectamos los metadatos de 'is_spacer' para que el Blade reduzca su tamaño
+                if (count($rowData) > 0) {
+                    $matrixCeldas[$row] = [
+                        'cells' => $rowData,
+                        'is_spacer' => $isRowEmpty
+                    ];
+                }
+            }
+
+            $html = view('pdf.boleta_institucional', [
+                'matrix' => $matrixCeldas,
+                'boleta' => $boleta,
+            ])->render();
+
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
+            $pdf->setPaper('a4', 'portrait');
+
+            return response($pdf->output(), 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="boleta_digital.pdf"'
+            ]);
         }
 
-        abort(404, 'Formato de archivo binario no soportado por el motor del plantel.');
+        abort(404, 'Formato de archivo no soportado.');
     }
 
     /**
@@ -571,18 +642,132 @@ class BoletaController extends Controller
         /** @var \App\Models\User $authUser */
         $authUser = Auth::user();
 
+        // 1. Control de seguridad perimetral cruzado
         if (!$authUser->hasAnyRole(['Administrador', 'Recursos Humanos']) && $boleta->user_id !== $authUser->id) {
             abort(403, 'Acción no autorizada.');
         }
 
-        $pathAbsoluto = storage_path('app/' . $boleta->pdf_path);
+        $pathLimpio = $boleta->pdf_path;
 
-        if (!file_exists($pathAbsoluto)) {
-            abort(404, 'El archivo físico solicitado no se encuentra indexado en el disco local.');
+        if (!Storage::disk('local')->exists($pathLimpio)) {
+            abort(404, 'El archivo físico solicitado no se encuentra indexado en el disco.');
         }
 
-        // Forzamos el encabezado de descarga asignándole una nomenclatura limpia "Boleta_Mes_Año.pdf"
-        return response()->download($pathAbsoluto, "Boleta_{$boleta->mes}_{$boleta->anio}.pdf");
+        $extension = strtolower(pathinfo($pathLimpio, PATHINFO_EXTENSION));
+        $nombreArchivo = "Boleta_{$boleta->mes}_{$boleta->anio}.pdf";
+
+        // --- CASO A: SI YA ES UN PDF FÍSICO REAL (CTS / Gratificaciones) ---
+        if ($extension === 'pdf') {
+            return response()->download(Storage::disk('local')->path($pathLimpio), $nombreArchivo);
+        }
+
+        // --- CASO B: SI ES UN XML DE SUNAT PLAME (COMPILAMOS EN TIEMPO REAL) ---
+        if ($extension === 'xml') {
+            $pathAbsoluto = Storage::disk('local')->path($pathLimpio);
+
+            // Levantamos el motor de PhpSpreadsheet para normalizar la matriz
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReader('Xml');
+            $spreadsheet = $reader->load($pathAbsoluto);
+            $worksheet = $spreadsheet->getActiveSheet();
+
+            $highestRow = $worksheet->getHighestRow();
+            $matrixCeldas = [];
+            $mergeCells = $worksheet->getMergeCells();
+
+            for ($row = 1; $row <= $highestRow; $row++) {
+                $rowData = [];
+                $isRowEmpty = true;
+
+                for ($col = 2; $col <= 9; $col++) {
+                    /** @var \PhpOffice\PhpSpreadsheet\Cell\Cell $cell */
+                    $cell = $worksheet->getCell([$col, $row]);
+
+                    if ($cell->isInMergeRange() && !$cell->isMergeRangeValueCell()) {
+                        continue;
+                    }
+
+                    $colspan = 1;
+                    $rowspan = 1;
+
+                    if ($cell->isMergeRangeValueCell()) {
+                        $range = $cell->getMergeRange();
+                        [$start, $end] = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::rangeBoundaries($range);
+                        $colspan = $end[0] - $start[0] + 1;
+                        $rowspan = $end[1] - $start[1] + 1;
+                    }
+
+                    $value = $cell->getValue();
+                    $strValue = trim((string)$value);
+
+                    if ($strValue !== '') {
+                        $isRowEmpty = false;
+                    }
+
+                    if (str_contains($strValue, 'PDT Planilla Electrónica') || str_contains($strValue, 'Número de Orden')) {
+                        continue 2;
+                    }
+
+                    $align = "center";
+                    $isNumeric = false;
+                    $isHeaderInfo = false;
+
+                    if (str_starts_with($strValue, 'RUC :') || str_starts_with($strValue, 'Empleador :') || str_starts_with($strValue, 'Periodo :')) {
+                        $align = "left";
+                        $isHeaderInfo = true;
+                        $value = str_replace(' :', ':', $value);
+                    } elseif ($cell->getDataType() === \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC) {
+                        $align = "right";
+                        $value = number_format((float) $value, 2);
+                        $isNumeric = true;
+                    } elseif ($col === 3 && $row >= 13) {
+                        $align = "left";
+                    }
+
+                    $style = $worksheet->getStyle([$col, $row]);
+                    $fillColor = $style->getFill()->getStartColor()->getRGB();
+                    $bgColor = ($fillColor && $fillColor !== '000000' && $fillColor !== 'FFFFFF') ? "#{$fillColor}" : "#ffffff";
+
+                    if ($isHeaderInfo) {
+                        $bgColor = "#DBE5F1";
+                    }
+
+                    $rowData[$col] = [
+                        'value'          => $value,
+                        'align'          => $align,
+                        'bg_color'       => $bgColor,
+                        'colspan'        => $colspan,
+                        'rowspan'        => $rowspan,
+                        'is_numeric'     => $isNumeric,
+                        'is_header_info' => $isHeaderInfo
+                    ];
+                }
+
+                if (count($rowData) > 0) {
+                    $matrixCeldas[$row] = [
+                        'cells' => $rowData,
+                        'is_spacer' => $isRowEmpty
+                    ];
+                }
+            }
+
+            // Renderizamos el Blade idéntico a una cadena HTML
+            $html = view('pdf.boleta_institucional', [
+                'matrix' => $matrixCeldas,
+                'boleta' => $boleta,
+            ])->render();
+
+            // Compilamos mediante DomPDF con los mismos márgenes exactos del visor
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
+            $pdf->setPaper('a4', 'portrait');
+
+            // 🎯 DESPACHO COMO CONTENIDO ADJUNTO (FORZA LA DESCARGA AUTOMÁTICA)
+            return response($pdf->output(), 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="' . $nombreArchivo . '"'
+            ]);
+        }
+
+        abort(404, 'Formato no soportado.');
     }
 
     /**
@@ -609,6 +794,38 @@ class BoletaController extends Controller
         // Retornamos el binario puro PNG para la inyección del Iframe
         return response()->file(Storage::disk('local')->path($empleado->signature_path), [
             'Content-Type' => 'image/png',
+        ]);
+    }
+
+    // 1. Método para el Botón de Notificar Boleta
+    public function notificarPersonal(Request $request, $userId, $boletaId)
+    {
+        $user = User::findOrFail($userId);
+        $boleta = Boleta::findOrFail($boletaId);
+
+        // Disparamos el Correo 1
+        $user->notify(new BoletaDisponibleNotification($boleta));
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Notificación de boleta enviada con éxito.'
+        ]);
+    }
+
+    // 2. Método de prueba para el Botón de Enviar Credenciales
+    public function enviarCredencialesPrueba(Request $request, $userId)
+    {
+        $user = User::findOrFail($userId);
+        
+        // Simulamos una contraseña temporal por ahora
+        $passwordProvisional = 'Andino2026*'; 
+
+        // Disparamos el Correo 2
+        $user->notify(new CredencialesCreadasNotification($passwordProvisional));
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Correo de credenciales enviado con éxito.'
         ]);
     }
 }

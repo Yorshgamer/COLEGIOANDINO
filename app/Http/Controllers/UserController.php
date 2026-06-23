@@ -69,8 +69,23 @@ class UserController extends Controller
      */
     public function show(User $user)
     {
+        // Cargamos las boletas del usuario ordenadas desde la más reciente
+        $user->load(['boletas' => function ($query) {
+            $query->orderBy('anio', 'desc')->orderBy('mes', 'desc');
+        }]);
+
         return Inertia::render('Users/Show', [
-            'user' => $user->load('roles')
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'dni' => $user->dni,
+                'phone' => $user->phone,
+                'email' => $user->email,
+                'status' => $user->status,
+                'created_at' => $user->created_at->toIso8601String(),
+                'roles' => $user->roles,
+                'boletas' => $user->boletas // 🚀 Pasamos la colección al frontend
+            ]
         ]);
     }
 
@@ -136,7 +151,7 @@ class UserController extends Controller
         $user->delete();
         return redirect()->route('users.index')->with('success', 'Usuario eliminado.');
     }
-    
+
     /**
      * Método nuevo: Dar de Alta / Restaurar un trabajador devuelto
      */

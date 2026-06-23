@@ -1,172 +1,173 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
-import { FileText, CheckCircle2, Download, X } from '@lucide/vue';
+import { ref } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
 
-interface Empleado {
-    id: number;
-    first_name: string;
-    paternal_surname: string;
-    maternal_surname: string;
-    dni: string;
-}
-
+interface Role { id: number; name: string; }
 interface Boleta {
     id: number;
-    user_id: number;
-    type: 'Boleta Mensual' | 'Gratificación' | 'CTS' | 'Otro';
+    type: string;
     mes: string;
     anio: number;
-    pdf_path: string;
     status: 'Procesada' | 'Vista' | 'Firmada' | 'Observada';
-    created_at: string;
     signed_at: string | null;
-    observation_message: string | null;
-    user?: Empleado;
 }
 
-const props = defineProps<{
-    boleta: Boleta;
-}>();
+interface User {
+    id: number;
+    name: string;
+    dni: string;
+    phone: string | null;
+    email: string;
+    status: 'Activo' | 'Inactivo';
+    created_at: string;
+    roles: Role[];
+    boletas: Boleta[]; // 🚀 Añadido el tipado de boletas
+}
+
+defineProps<{ user: User }>();
 
 defineOptions({
     layout: {
         breadcrumbs: [
             { title: 'Dashboard', href: '/dashboard' },
-            { title: 'Documentos Laborales', href: '/boletas' },
-            { title: 'Visor de Planilla', href: '#' },
+            { title: 'Gestión de Usuarios', href: '/users' },
+            { title: 'Ficha de Personal', href: '#' },
         ],
     },
 });
 
-const page = usePage();
-const authUser = computed(() => (page.props.auth as any).user);
+// 🎯 CONTROL REACTIVO DE PESTAÑAS
+const activeTab = ref<'profile' | 'boletas'>('profile');
 
-// Formateador semántico de marcas de tiempo peruanas
-const formatTimestamp = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-PE', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
 };
-
-// Computamos la ruta de lectura del PDF usando el visor nativo de Laravel Storage
-const pdfUrl = computed(() => `/boletas/${props.boleta.id}/pdf`);
 </script>
 
 <template>
-    <Head :title="`${boleta.type} - ${boleta.mes} ${boleta.anio}`" />
+    <Head :title="`Perfil - ${user.name}`" />
 
-    <div class="flex flex-col xl:flex-row gap-6 p-6 h-full w-full max-w-[1600px] mx-auto items-stretch">
+    <div class="flex h-full flex-1 flex-col gap-6 p-6 max-w-3xl mx-auto w-full antialiased text-neutral-900 dark:text-neutral-100">
         
-        <div class="w-full xl:w-[400px] shrink-0 flex flex-col gap-4">
-            
-            <div class="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 flex flex-col justify-between h-full shadow-sm space-y-6">
-                
-                <div class="space-y-1">
-                    <div class="flex items-center justify-between">
-                        <span :class="['px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded-md border', 
-                            boleta.status === 'Firmada' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-900/50' : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/50'
+        <div class="flex items-center justify-between">
+            <Link href="/users" class="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors uppercase tracking-wider">
+                ← Regresar al Listado
+            </Link>
+        </div>
+
+        <div class="rounded-2xl border border-neutral-200/80 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900 shadow-xs flex flex-col sm:flex-row items-center gap-5">
+            <div class="size-16 rounded-full bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900 flex items-center justify-center font-black text-xl tracking-tight shrink-0 select-none shadow-xs">
+                {{ getInitials(user.name) }}
+            </div>
+            <div class="text-center sm:text-left space-y-1">
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <h1 class="text-xl font-black tracking-tight text-neutral-950 dark:text-white">{{ user.name }}</h1>
+                    <div>
+                        <span :class="['inline-flex items-center rounded-md px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider border', 
+                            user.status === 'Activo' 
+                                ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-900/50' 
+                                : 'bg-neutral-50 text-neutral-500 border-neutral-200 dark:bg-neutral-950/30 dark:text-neutral-400 dark:border-neutral-800'
                         ]">
-                            {{ boleta.status }}
+                            {{ user.status }}
                         </span>
-                        <span class="text-xs font-mono text-neutral-400">ID: #{{ boleta.id }}</span>
-                    </div>
-                    <h2 class="text-xl font-black text-neutral-900 dark:text-neutral-50 tracking-tight pt-2">{{ boleta.type }}</h2>
-                    <p class="text-xs text-neutral-400 font-medium">{{ boleta.mes }} - {{ boleta.anio }}</p>
-                </div>
-
-                <div class="relative pl-6 space-y-6 border-l-2 border-neutral-100 dark:border-neutral-800 ml-3">
-                    
-                    <div class="relative">
-                        <div class="absolute -left-[31px] top-0 p-1 bg-white dark:bg-neutral-900 rounded-full">
-                            <CheckCircle2 class="size-4 text-blue-500 bg-white dark:bg-neutral-900 rounded-full" />
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Notificada / Cargada</span>
-                            <span class="text-[10px] font-mono text-neutral-400">{{ formatTimestamp(boleta.created_at) }}</span>
-                        </div>
-                    </div>
-
-                    <div class="relative">
-                        <div class="absolute -left-[31px] top-0 p-1 bg-white dark:bg-neutral-900 rounded-full">
-                            <CheckCircle2 :class="['size-4 rounded-full bg-white dark:bg-neutral-900', boleta.status !== 'Procesada' ? 'text-blue-500' : 'text-neutral-200 dark:text-neutral-800']" />
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Vista en Plataforma</span>
-                            <span class="text-[10px] font-mono text-neutral-400">
-                                {{ boleta.status !== 'Procesada' ? 'Verificado por el personal' : 'Pendiente de lectura' }}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div class="relative">
-                        <div class="absolute -left-[31px] top-0 p-1 bg-white dark:bg-neutral-900 rounded-full">
-                            <CheckCircle2 :class="['size-4 rounded-full bg-white dark:bg-neutral-900', boleta.status === 'Firmada' ? 'text-green-500' : boleta.status === 'Observada' ? 'text-red-500' : 'text-neutral-200 dark:text-neutral-800']" />
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Conformidad Firmada</span>
-                            <span class="text-[10px] font-mono text-neutral-400">
-                                {{ boleta.signed_at ? formatTimestamp(boleta.signed_at) : 'Esperando firma digital' }}
-                            </span>
-                        </div>
                     </div>
                 </div>
-
-                <div class="border border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl p-4 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col items-center justify-center min-h-[120px] relative overflow-hidden">
-                    <template v-if="boleta.status === 'Firmada' && boleta.user">
-                        <img v-if="(page.props.auth as any).user.signature_path" :src="(page.props.auth as any).user.signature_path" alt="Firma Electrónica" class="h-16 object-contain dark:invert max-w-full" />
-                        <span v-else class="text-[11px] font-mono font-bold uppercase text-green-600 tracking-wider">Firmado Digitalmente</span>
-                        <div class="absolute bottom-1 right-2 text-[8px] font-mono text-neutral-400">Huella: {{ boleta.user.dni }}</div>
-                    </template>
-                    <template v-else-if="boleta.status === 'Observada'">
-                        <span class="text-xs text-red-500 font-bold italic text-center">"{{ boleta.observation_message }}"</span>
-                    </template>
-                    <template v-else>
-                        <span class="text-xs italic text-neutral-400 select-none">Documento sin visar</span>
-                    </template>
-                </div>
-
-                <div class="border-t pt-4 space-y-2">
-                    <span class="text-[9px] font-bold uppercase tracking-wider text-neutral-400">Asignación Laboral</span>
-                    <div class="flex flex-col" v-if="boleta.user">
-                        <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">{{ boleta.user.paternal_surname }} {{ boleta.user.maternal_surname }}, {{ boleta.user.first_name }}</span>
-                        <span class="text-[11px] font-mono text-neutral-400 mt-0.5">DNI: {{ boleta.user.dni }}</span>
-                    </div>
-                </div>
-
-                <div class="border-t pt-4 flex flex-col gap-2">
-                    <a :href="`/boletas/${boleta.id}/descargar`" class="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-4 py-2.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 shadow-2xs hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors">
-                        <Download class="size-3.5" /> Descargar PDF Oficial
-                    </a>
-                    <Link href="/boletas" class="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-medium text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 text-center">
-                        Regresar al Historial
-                    </Link>
-                </div>
+                <p class="text-xs text-neutral-400 font-medium">Ficha de control operativo del Colegio Andino.</p>
             </div>
         </div>
 
-        <div class="flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 overflow-hidden shadow-sm flex flex-col min-h-[500px] lg:min-h-0">
-            <div class="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-3 flex justify-between items-center shrink-0">
-                <div class="flex items-center gap-2">
-                    <FileText class="size-4 text-blue-500" />
-                    <span class="text-xs font-mono font-bold text-neutral-700 dark:text-neutral-300 truncate max-w-md">
-                        {{ boleta.type }} — {{ boleta.mes }} {{ boleta.anio }}
-                    </span>
+        <div class="flex border-b border-neutral-200 dark:border-neutral-800 gap-2 select-none">
+            <button 
+                @click="activeTab = 'profile'"
+                :class="['px-4 py-2 text-xs uppercase tracking-wider font-bold border-b-2 transition-all', 
+                    activeTab === 'profile' 
+                        ? 'border-neutral-900 text-neutral-900 dark:border-white dark:text-white' 
+                        : 'border-transparent text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
+                ]"
+            >
+                Información del Trabajador
+            </button>
+            <button 
+                @click="activeTab = 'boletas'"
+                :class="['px-4 py-2 text-xs uppercase tracking-wider font-bold border-b-2 transition-all flex items-center gap-2', 
+                    activeTab === 'boletas' 
+                        ? 'border-neutral-900 text-neutral-900 dark:border-white dark:text-white' 
+                        : 'border-transparent text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
+                ]"
+            >
+                Historial de Boletas 
+                <span class="bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 px-1.5 py-0.5 rounded-md text-[10px] font-mono">
+                    {{ user.boletas?.length ?? 0 }}
+                </span>
+            </button>
+        </div>
+
+        <div v-if="activeTab === 'profile'" class="space-y-6">
+            <div class="rounded-2xl border border-neutral-200/80 bg-white overflow-hidden dark:border-neutral-800 dark:bg-neutral-900 shadow-2xs divide-y divide-neutral-100 dark:divide-neutral-800">
+                <div class="p-6 space-y-4">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-400">Identificación Legal</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 py-1 items-baseline"><span class="text-xs font-semibold text-neutral-400 sm:text-neutral-500 uppercase sm:normal-case">Nombre Completo</span><span class="text-sm font-bold text-neutral-900 dark:text-neutral-100 sm:col-span-2">{{ user.name }}</span></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 py-1 items-baseline"><span class="text-xs font-semibold text-neutral-400 sm:text-neutral-500 uppercase sm:normal-case">DNI (RENIEC)</span><span class="text-sm font-mono font-bold tracking-wider text-neutral-900 dark:text-neutral-100 sm:col-span-2">{{ user.dni }}</span></div>
                 </div>
-                <Link href="/boletas" class="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">
-                    <X class="size-4" />
-                </Link>
+                <div class="p-6 space-y-4">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-400">Canales de Comunicación</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 py-1 items-baseline"><span class="text-xs font-semibold text-neutral-400 sm:text-neutral-500 uppercase sm:normal-case">Celular Personal</span><span class="text-sm font-mono text-neutral-900 dark:text-neutral-100 sm:col-span-2">{{ user.phone || 'No registrado' }}</span></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 py-1 items-baseline"><span class="text-xs font-semibold text-neutral-400 sm:text-neutral-500 uppercase sm:normal-case">Correo Electrónico</span><span class="text-sm font-medium text-blue-600 dark:text-blue-400 sm:col-span-2 truncate">{{ user.email }}</span></div>
+                </div>
+                <div class="p-6 space-y-4">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-400">Credenciales y Seguridad</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 py-1 items-center"><span class="text-xs font-semibold text-neutral-400 sm:text-neutral-500 uppercase sm:normal-case">Roles Asignados</span><div class="sm:col-span-2 flex flex-wrap gap-1.5"><span v-for="role in user.roles" :key="role.id" class="inline-flex items-center rounded-lg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700/60 px-2.5 py-1 text-xs font-bold text-neutral-800 dark:text-neutral-200 tracking-tight">{{ role.name }}</span></div></div>
+                </div>
             </div>
 
-            <iframe 
-                :src="`${pdfUrl}#toolbar=1&navpanes=0`" 
-                class="w-full h-full flex-1 border-none bg-neutral-100 dark:bg-neutral-950"
-                title="Visor de Boletas Colegio Andino"
-            ></iframe>
+            <div class="flex items-center justify-end gap-3 pt-2">
+                <Link :href="`/users/${user.id}/edit`" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-neutral-50 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 py-2.5 text-sm font-bold shadow-sm transition-colors">
+                    Modificar Información de Personal
+                </Link>
+            </div>
+        </div>
+
+        <div v-else class="space-y-4">
+            <div v-if="!user.boletas || user.boletas.length === 0" class="rounded-2xl border border-dashed border-neutral-200 dark:border-neutral-800 p-12 text-center">
+                <p class="text-sm italic text-neutral-400">Este trabajador no cuenta con boletas de pago registradas en la intranet.</p>
+            </div>
+
+            <div v-else class="rounded-2xl border border-neutral-200/80 bg-white overflow-hidden dark:border-neutral-800 dark:bg-neutral-900 shadow-2xs">
+                <table class="w-full border-collapse text-left text-xs">
+                    <thead>
+                        <tr class="bg-neutral-50 dark:bg-neutral-950 text-neutral-400 font-bold border-b border-neutral-100 dark:border-neutral-800 uppercase tracking-wider select-none">
+                            <th class="p-4">Periodo</th>
+                            <th class="p-4">Tipo Documento</th>
+                            <th class="p-4">Estado Interno</th>
+                            <th class="p-4 text-right">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium">
+                        <tr v-for="boleta in user.boletas" :key="boleta.id" class="hover:bg-neutral-50/50 dark:hover:bg-neutral-950/40 transition-colors">
+                            <td class="p-4 font-bold font-mono">
+                                {{ boleta.mes }} / {{ boleta.anio }}
+                            </td>
+                            <td class="p-4 text-neutral-500 dark:text-neutral-400">
+                                {{ boleta.type }}
+                            </td>
+                            <td class="p-4">
+                                <span :class="['px-2 py-0.5 text-[10px] font-bold rounded-md border uppercase',
+                                    boleta.status === 'Firmada' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/20 dark:text-green-400 dark:border-green-900/40' :
+                                    boleta.status === 'Observada' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/40' :
+                                    'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/40'
+                                ]">
+                                    {{ boleta.status }}
+                                </span>
+                            </td>
+                            <td class="p-4 text-right">
+                                <Link :href="`/boletas/${boleta.id}`" class="inline-flex items-center justify-center rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors shadow-2xs">
+                                    Abrir Visor
+                                </Link>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     </div>

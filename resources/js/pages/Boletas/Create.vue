@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { UploadCloud, FileSpreadsheet, FileText, CheckCircle, AlertCircle, ArrowLeft, User, Calendar, RefreshCw } from '@lucide/vue';
+import { UploadCloud, FileSpreadsheet, FileText, CheckCircle, AlertCircle, ArrowLeft, User, Calendar} from '@lucide/vue';
 
 // Definimos la prop que viene de Laravel
 const props = defineProps<{

@@ -80,4 +80,8 @@ class User extends Authenticatable
     {
         return "{$this->first_name} {$this->paternal_surname} {$this->maternal_surname}";
     }
+    public function boletas()
+    {
+        return $this->hasMany(Boleta::class, 'user_id'); 
+    }
 }
