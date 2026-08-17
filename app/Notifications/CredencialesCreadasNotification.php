@@ -36,17 +36,22 @@ $this->passwordTemporal = $passwordTemporal;
      */
     public function toMail(object $notifiable): MailMessage
     {
+        $loginUrl = config('app.url', 'http://localhost:8000') . '/login';
+
         return (new MailMessage)
-            ->subject('🔐 Sus Credenciales de Acceso a la Intranet')
+            ->subject('🔐 Sus Credenciales de Acceso — Intranet Andino')
             ->greeting('COLEGIO PARTICULAR ANDINO')
-            ->line('Estimado(a) ' . $notifiable->name . ',')
-            ->line('Se ha creado con éxito su cuenta de usuario para acceder a la plataforma institucional.')
-            ->line('A continuación, se detallan sus credenciales de acceso provisionales:')
-            ->line('**Correo Electrónico:** ' . $notifiable->email)
-            ->line('**Contraseña Temporal:** `' . $this->passwordTemporal . '`')
-            ->action('Iniciar Sesión Aquí', url('http://localhost:8000/login'))
-            ->line('Por motivos de higiene digital y seguridad, el sistema le solicitará cambiar esta contraseña obligatoriamente en su primer ingreso.')
-            ->salutation('INTRANET — Área de Informática');
+            ->line('Estimado(a) colaborador(a) <strong>' . $notifiable->name . '</strong>,')
+            ->line('Le comunicamos que se han actualizado o generado sus credenciales de acceso para la plataforma de la Intranet.')
+            ->line('A continuación, se detallan sus credenciales provisionales de seguridad:')
+            
+            // 🎯 Usamos HTML nativo para asegurar la compatibilidad de negritas
+            ->line('• <strong>Usuario (Correo):</strong> ' . $notifiable->email)
+            ->line('• <strong>Contraseña Temporal:</strong> <code style="background-color: #f4f4f5; padding: 2px 6px; border-radius: 4px; font-family: monospace; color: #af0c27;">' . $this->passwordTemporal . '</code>')
+            
+            ->action('Iniciar Sesión en Intranet', $loginUrl)
+            ->line('Por motivos de seguridad y digitalización del plantel, se le recomienda cambiar esta contraseña una vez ingrese a su panel de configuración de perfil.')
+            ->salutation('Área de Informática & Soporte Técnico<br><strong>Intranet Colegio Andino</strong>');
     }
 
     /**

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+import Pagination from '@/components/Pagination.vue'; // Importas el componente
 
 interface Role {
     id: number;
@@ -37,6 +38,8 @@ interface PaginatedUsers {
 
 const props = defineProps<{
     users: PaginatedUsers;
+    filters: any;
+    allRoles: string[];
 }>();
 
 defineOptions({
@@ -61,34 +64,55 @@ const restoreUser = (id: number) => {
 };
 
 // --- Filtros rápidos (operan sobre los registros ya cargados en esta página) ---
-const search = ref('');
-const roleFilter = ref('all');
-const statusFilter = ref('all'); // all | Activo | Inactivo | Baja
+const search = ref(props.filters?.search || '');
+const roleFilter = ref(props.filters?.role || 'all');
+const statusFilter = ref(props.filters?.status || 'all');
 
-const availableRoles = computed(() => {
-    const set = new Set<string>();
-    props.users.data.forEach((u) => u.roles.forEach((r) => set.add(r.name)));
-    return Array.from(set).sort();
-});
+const availableRoles = computed(() => props.allRoles);
 
-const filteredUsers = computed(() => {
-    const term = search.value.trim().toLowerCase();
-    return props.users.data.filter((u) => {
-        const matchesSearch = !term || u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term) || u.dni.includes(term);
-        const matchesRole = roleFilter.value === 'all' || u.roles.some((r) => r.name === roleFilter.value);
-        const isBaja = !!u.deleted_at;
-        const matchesStatus =
-            statusFilter.value === 'all' || (statusFilter.value === 'Baja' && isBaja) || (!isBaja && u.status === statusFilter.value);
-        return matchesSearch && matchesRole && matchesStatus;
-    });
-});
+const filteredUsers = computed(() => props.users.data);
 
 const hasActiveFilters = computed(() => search.value.trim() !== '' || roleFilter.value !== 'all' || statusFilter.value !== 'all');
 
+// 🎯 Función encargada de recargar la información de forma asíncrona
+const aplicarFiltros = () => {
+    router.reload({
+        data: {
+            page: 1, // Reiniciamos la paginación al buscar
+            search: search.value.trim() || undefined,
+            role: roleFilter.value !== 'all' ? roleFilter.value : undefined,
+            status: statusFilter.value !== 'all' ? statusFilter.value : undefined,
+        },
+        only: ['users'], // Actualiza exclusivamente los datos de la tabla
+    });
+};
+
+let timeoutBusqueda: ReturnType<typeof setTimeout>;
+
+watch(search, () => {
+    // Cancelamos inmediatamente cualquier petición pendiente anterior
+    clearTimeout(timeoutBusqueda);
+
+    // Agendamos la nueva búsqueda para dentro de 150 milisegundos
+    timeoutBusqueda = setTimeout(() => {
+        aplicarFiltros();
+    }, 150);
+});
+
+watch([roleFilter, statusFilter], () => {
+    aplicarFiltros();
+});
+
+// El método reset limpia los estados locales e instruye al servidor reiniciar la vista
 const resetFilters = () => {
     search.value = '';
     roleFilter.value = 'all';
     statusFilter.value = 'all';
+
+    router.reload({
+        data: { page: 1, search: undefined, role: undefined, status: undefined },
+        only: ['users']
+    });
 };
 
 // --- Helpers visuales ---
@@ -183,7 +207,7 @@ const formatDate = (dateString: string) => {
                         <circle cx="11" cy="11" r="7" />
                         <line x1="21" y1="21" x2="16.65" y2="16.65" />
                     </svg>
-                    <input v-model="search" type="text" placeholder="Buscar por nombre, correo o DNI"
+                    <input v-model="search" type="text" placeholder="Buscar por DNI o empleado y presiona Enter..."
                         class="w-full rounded-md border border-neutral-300 bg-white py-2 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/5 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500" />
                 </div>
 
@@ -212,7 +236,8 @@ const formatDate = (dateString: string) => {
             </p>
 
             <div class="overflow-x-auto">
-                <table v-if="filteredUsers.length" class="w-full text-sm text-left text-neutral-500 dark:text-neutral-400">
+                <table v-if="filteredUsers.length"
+                    class="w-full text-sm text-left text-neutral-500 dark:text-neutral-400">
                     <thead
                         class="text-xs uppercase bg-neutral-50 dark:bg-neutral-800/50 text-neutral-700 dark:text-neutral-300 border-b border-sidebar-border/70">
                         <tr>
@@ -239,17 +264,20 @@ const formatDate = (dateString: string) => {
 
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="flex items-center gap-3">
-                                    <span :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold', getAvatarClass(user)]">
+                                    <span
+                                        :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold', getAvatarClass(user)]">
                                         {{ getInitials(user) }}
                                     </span>
                                     <div class="flex flex-col">
-                                        <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ user.name }}</span>
+                                        <span class="font-medium text-neutral-900 dark:text-neutral-100">{{ user.name
+                                        }}</span>
                                         <span class="text-xs text-neutral-400">{{ user.email }}</span>
                                     </div>
                                 </div>
                             </td>
 
-                            <td class="px-6 py-4 whitespace-nowrap font-mono tabular-nums text-neutral-700 dark:text-neutral-300">
+                            <td
+                                class="px-6 py-4 whitespace-nowrap font-mono tabular-nums text-neutral-700 dark:text-neutral-300">
                                 {{ user.dni }}
                             </td>
 
@@ -263,7 +291,8 @@ const formatDate = (dateString: string) => {
                                 </div>
                             </td>
 
-                            <td class="hidden whitespace-nowrap px-6 py-4 text-xs text-neutral-600 lg:table-cell dark:text-neutral-400">
+                            <td
+                                class="hidden whitespace-nowrap px-6 py-4 text-xs text-neutral-600 lg:table-cell dark:text-neutral-400">
                                 {{ formatDate(user.created_at) }}
                             </td>
 
@@ -274,7 +303,8 @@ const formatDate = (dateString: string) => {
                                 </span>
                                 <span v-else
                                     :class="['inline-flex items-center gap-1.5 text-xs font-medium', user.status === 'Activo' ? 'text-green-700 dark:text-green-400' : 'text-neutral-500 dark:text-neutral-400']">
-                                    <span :class="['h-1.5 w-1.5 rounded-full', user.status === 'Activo' ? 'bg-green-500' : 'bg-neutral-400']" />
+                                    <span
+                                        :class="['h-1.5 w-1.5 rounded-full', user.status === 'Activo' ? 'bg-green-500' : 'bg-neutral-400']" />
                                     {{ user.status }}
                                 </span>
                             </td>
@@ -283,18 +313,24 @@ const formatDate = (dateString: string) => {
                                 <div class="flex items-center justify-end gap-1">
                                     <Link :href="`/users/${user.id}`" title="Ver detalle" aria-label="Ver detalle"
                                         class="rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100">
-                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <path
+                                                d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
                                             <circle cx="12" cy="12" r="3" />
                                         </svg>
                                     </Link>
 
                                     <template v-if="user.deleted_at">
-                                        <button @click="restoreUser(user.id)" type="button" title="Dar de alta" aria-label="Dar de alta"
+                                        <button @click="restoreUser(user.id)" type="button" title="Dar de alta"
+                                            aria-label="Dar de alta"
                                             class="rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-green-50 hover:text-green-700 dark:text-neutral-400 dark:hover:bg-green-500/10 dark:hover:text-green-400">
-                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M16.023 9.348h4.992v-.001M2.985 14.652H7.98m9.252-4.652a8.25 8.25 0 1 0-2.046 8.466" />
-                                                <path d="M16.023 9.348L20.99 4.5M2.985 14.652L2.5 19.5" stroke-opacity="0" />
+                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <path
+                                                    d="M16.023 9.348h4.992v-.001M2.985 14.652H7.98m9.252-4.652a8.25 8.25 0 1 0-2.046 8.466" />
+                                                <path d="M16.023 9.348L20.99 4.5M2.985 14.652L2.5 19.5"
+                                                    stroke-opacity="0" />
                                                 <path d="M21 4.5v4.848h-4.848" />
                                                 <path d="M3 19.5v-4.848h4.848" />
                                             </svg>
@@ -303,16 +339,22 @@ const formatDate = (dateString: string) => {
                                     <template v-else>
                                         <Link :href="`/users/${user.id}/edit`" title="Editar" aria-label="Editar"
                                             class="rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-neutral-400 dark:hover:bg-blue-500/10 dark:hover:text-blue-400">
-                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931z" />
-                                                <path d="M19.5 6.75 19.5 19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V8.25A2.25 2.25 0 0 1 6.75 6H10.5" />
+                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <path
+                                                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931z" />
+                                                <path
+                                                    d="M19.5 6.75 19.5 19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V8.25A2.25 2.25 0 0 1 6.75 6H10.5" />
                                             </svg>
                                         </Link>
-                                        <button @click="deleteUser(user.id)" type="button" title="Dar de baja" aria-label="Dar de baja"
+                                        <button @click="deleteUser(user.id)" type="button" title="Dar de baja"
+                                            aria-label="Dar de baja"
                                             class="rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-neutral-400 dark:hover:bg-red-500/10 dark:hover:text-red-400">
-                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                                 <circle cx="9" cy="7" r="3.25" />
-                                                <path d="M3 19.5c0-3.59 2.91-6.5 6.5-6.5h0c1.45 0 2.79.475 3.879 1.277" />
+                                                <path
+                                                    d="M3 19.5c0-3.59 2.91-6.5 6.5-6.5h0c1.45 0 2.79.475 3.879 1.277" />
                                                 <path d="M16 11h5" />
                                             </svg>
                                         </button>
@@ -324,15 +366,18 @@ const formatDate = (dateString: string) => {
                 </table>
 
                 <div v-else class="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-                    <svg class="h-10 w-10 text-neutral-300 dark:text-neutral-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg class="h-10 w-10 text-neutral-300 dark:text-neutral-700" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="7" />
                         <line x1="21" y1="21" x2="16.65" y2="16.65" />
                     </svg>
                     <p class="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                        {{ users.data.length === 0 ? 'Aún no hay personal registrado' : 'No se encontraron resultados' }}
+                        {{ users.data.length === 0 ? 'Aún no hay personal registrado' : 'No se encontraron resultados'
+                        }}
                     </p>
                     <p class="max-w-xs text-xs text-neutral-500 dark:text-neutral-400">
-                        {{ users.data.length === 0 ? 'Comienza registrando al primer trabajador del plantel.' : 'Intenta ajustar los filtros o el término de búsqueda.' }}
+                        {{ users.data.length === 0 ? 'Comienza registrando al primer trabajador del plantel.' :
+                            'Intentab ajustar los filtros o el término de búsqueda.' }}
                     </p>
                     <button v-if="hasActiveFilters" type="button" @click="resetFilters"
                         class="mt-1 text-xs font-medium text-neutral-900 underline-offset-2 hover:underline dark:text-neutral-100">
@@ -340,36 +385,7 @@ const formatDate = (dateString: string) => {
                     </button>
                 </div>
             </div>
-
-            <div v-if="users.last_page > 1"
-                class="flex items-center justify-between border-t border-neutral-200 px-4 py-3 sm:px-6 dark:border-neutral-800">
-                <div class="flex flex-1 justify-between sm:hidden">
-                    <Link :href="users.links[0].url || '#'"
-                        :class="['rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300', !users.links[0].url && 'pointer-events-none opacity-40']">
-                        Anterior
-                    </Link>
-                    <Link :href="users.links[users.links.length - 1].url || '#'"
-                        :class="['ml-3 rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300', !users.links[users.links.length - 1].url && 'pointer-events-none opacity-40']">
-                        Siguiente
-                    </Link>
-                </div>
-                <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-                    <p class="text-sm text-neutral-700 dark:text-neutral-400">
-                        Página <span class="font-semibold text-neutral-900 dark:text-neutral-100">{{ users.current_page }}</span>
-                        de <span class="font-semibold text-neutral-900 dark:text-neutral-100">{{ users.last_page }}</span>
-                        <span class="ml-1 text-xs text-neutral-500">({{ users.total }} empleados en total)</span>
-                    </p>
-                    <nav class="flex flex-wrap items-center gap-1" aria-label="Paginación">
-                        <Link v-for="(link, key) in users.links" :key="key" :href="link.url || '#'" :class="[
-                            'inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
-                            link.active
-                                ? 'bg-neutral-900 text-white dark:bg-neutral-50 dark:text-neutral-900'
-                                : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800',
-                            !link.url && 'pointer-events-none opacity-40'
-                        ]" v-html="link.label" />
-                    </nav>
-                </div>
-            </div>
+            <Pagination :meta="users" label="empleados en total" />
         </div>
     </div>
 </template>

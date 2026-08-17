@@ -122,4 +122,13 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Colores de Identidad Institucional (Branding)
+    |--------------------------------------------------------------------------
+    */
+    'colors' => [
+        'primary'   => '#af0c27', // 🔴 Rojo Andino principal
+        'secondary' => '#212e58', // 🔵 Azul Marino secundario
+    ],
 ];

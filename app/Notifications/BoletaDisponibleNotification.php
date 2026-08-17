@@ -15,14 +15,15 @@ class BoletaDisponibleNotification extends Notification
     protected $boleta;
 
     /**
-     * Create a new notification instance.
+     * Crear nueva instancia de la notificación.
      */
     public function __construct(Boleta $boleta)
     {
-$this->boleta = $boleta;    }
+        $this->boleta = $boleta;
+    }
 
     /**
-     * Get the notification's delivery channels.
+     * Canales de entrega de la notificación.
      *
      * @return array<int, string>
      */
@@ -32,29 +33,56 @@ $this->boleta = $boleta;    }
     }
 
     /**
-     * Get the mail representation of the notification.
+     * Representación del correo de la notificación.
      */
     public function toMail(object $notifiable): MailMessage
     {
+        $periodo   = $this->boleta->mes . ' ' . $this->boleta->anio;
+        $nombre    = $notifiable->name;
+        $loginUrl  = config('app.url') . '/login';
+        $tipoDoc = $this->boleta->type;
+
+        $articuloDocumento = match ($tipoDoc) {
+            'CTS' => 'su <strong>Compensación por Tiempo de Servicios (CTS)</strong>',
+            'Gratificación' => 'su <strong>Gratificación de Fiestas Patrias / Navidad</strong>',
+            'Otro' => 'un <strong>documento laboral</strong>',
+            default => 'su <strong>boleta de pago mensual</strong>', // Para 'Boleta Mensual' o cualquier otro
+        };
+
+        // Asunto dinámico según el tipo de documento
+        $asuntoEmail = match ($tipoDoc) {
+            'CTS', 'Gratificación' => "📄 Liquidación de {$tipoDoc} Disponible — Período {$periodo}",
+            default => "📄 Boleta de Pago Disponible — Período {$periodo}",
+        };
+
         return (new MailMessage)
-            ->subject('📄 Nueva Boleta de Pago Disponible — ' . $this->boleta->periodo)
-            ->greeting('COLEGIO PARTICULAR ANDINO') // Cabecera institucional
-            ->line('Estimado(a) ' . $notifiable->name . ',')
-            ->line('Le informamos que su boleta de pago correspondiente al periodo operativo **' . $this->boleta->periodo . '** ya se encuentra disponible en nuestro sistema.')
-            ->action('Ir al Visor de la Intranet', url('http://localhost:8000/login')) // Botón link para el Login local
-            ->line('Por favor, ingrese al enlace para revisar la conformidad del documento y proceder con la firma digital correspondiente.')
-            ->salutation('INTRANET — Área de Informática & Recursos Humanos'); // Footer personalizado
+            ->subject($asuntoEmail)
+            ->greeting('Colegio Particular Andino')
+
+            // 🎯 Usamos HTML nativo puro para las negritas
+            ->line('Estimado(a) colaborador(a) <strong>' . $nombre . '</strong>,')
+            ->line(
+                'Le comunicamos que ' . $articuloDocumento . ' correspondiente al período ' .
+                '<strong>' . $periodo . '</strong> ya se encuentra disponible en la plataforma de la Intranet institucional.'
+            )
+            ->action('Ingresar a la Intranet', $loginUrl)
+            ->line('Por favor, ingrese al sistema para revisar los conceptos y proceder con el visado digital obligatorio.')
+            ->line('Si tiene alguna duda o inconveniente con el acceso, comuníquese inmediatamente con el Área de Informática.')
+
+            // 🎯 Despedida formateada con HTML limpio sin asteriscos sueltos
+            ->salutation('Área de Informática & Recursos Humanos<br><strong>Intranet Colegio Andino</strong>');
     }
 
     /**
-     * Get the array representation of the notification.
+     * Representación en array de la notificación.
      *
      * @return array<string, mixed>
      */
     public function toArray(object $notifiable): array
     {
         return [
-            //
+            'boleta_id' => $this->boleta->id,
+            'periodo'   => $this->boleta->mes . ' ' . $this->boleta->anio,
         ];
     }
 }

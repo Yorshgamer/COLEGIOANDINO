@@ -50,9 +50,28 @@ class BoletaController extends Controller
             }
         }
 
+        // --- 🔍 MOTOR DE BÚSQUEDA GLOBAL (DNI, NOMBRE O AÑO) ---
+        if ($request->filled('search')) {
+            $term = trim($request->input('search'));
+
+            $query->where(function ($q) use ($term) {
+                $q->where('anio', 'LIKE', "%{$term}%")
+                    ->orWhereHas('user', function ($subQ) use ($term) {
+                        $subQ->where('dni', 'LIKE', "%{$term}%")
+                            ->orWhere('first_name', 'LIKE', "%{$term}%")
+                            ->orWhere('paternal_surname', 'LIKE', "%{$term}%")
+                            ->orWhere('maternal_surname', 'LIKE', "%{$term}%");
+                    });
+            });
+        }
+
         // --- EXTRACTOR DE FILTROS REACTIVOS DE LA UI ---
         if ($request->filled('type'))   $query->where('type', $request->type);
-        if ($request->filled('mes'))    $query->where('mes', $request->mes);
+
+        // Homologamos 'month' que viene de Vue con la columna 'mes' de la BD
+        if ($request->filled('month'))  $query->where('mes', $request->month);
+        if ($request->filled('mes'))    $query->where('mes', $request->mes); // Mantiene compatibilidad por si acaso
+
         if ($request->filled('anio'))   $query->where('anio', $request->anio);
         if ($request->filled('status')) $query->where('status', $request->status);
 
@@ -60,12 +79,13 @@ class BoletaController extends Controller
         $boletas = $query->orderBy('anio', 'desc')
             ->orderBy('created_at', 'desc')
             ->paginate(10)
+            ->onEachSide(1)
             ->withQueryString(); // Conserva los parámetros de búsqueda al cambiar de página
 
         // Despachamos el payload limpio hacia Vue a través de Inertia
         return Inertia::render('Boletas/Index', [
             'boletas' => $boletas,
-            'filters' => $request->only(['type', 'mes', 'anio', 'status', 'user_id']),
+            'filters' => $request->only(['type', 'month', 'mes', 'anio', 'status', 'user_id', 'search']),
             // Si es gestor, inyectamos la lista de personal activo para alimentar los selectores de control
             'empleados' => $authUser->hasAnyRole(['Administrador', 'Recursos Humanos'])
                 ? User::select('id', 'first_name', 'paternal_surname', 'maternal_surname', 'dni')->where('status', 'Activo')->get()
@@ -190,7 +210,7 @@ class BoletaController extends Controller
             '12' => 'Diciembre'
         ];
 
-        // Iteración del lote de archivos en paralelo simulado
+        // Iteración del lote de archivos
         foreach ($request->file('archivos') as $file) {
             $originalName = $file->getClientOriginalName();
 
@@ -201,16 +221,15 @@ class BoletaController extends Controller
                 $anio = null;
 
                 // --- CASO A: RECONOCIMIENTO DE FORMATO CTS ---
-                // Nomenclatura esperada: CTS_DNI_PERIODO.pdf (Ej: CTS_75707785_202605.pdf)
                 if (str_starts_with(strtoupper($originalName), 'CTS_')) {
                     $parts = explode('_', str_replace('.pdf', '', $originalName));
 
                     if (count($parts) < 3) {
-                        throw new Exception("Nomenclatura CTS inválida o estructura corrupta.");
+                        throw new \Exception("Nomenclatura CTS inválida o estructura corrupta.");
                     }
 
-                    $dni = $parts[1];
-                    $periodo = $parts[2]; // Formato esperado: YYYYMM (202605)
+                    $dni = trim($parts[1]); // 🎯 Limpieza de espacios en blanco
+                    $periodo = trim($parts[2]); // Formato esperado: YYYYMM (202605)
 
                     $anio = (int) substr($periodo, 0, 4);
                     $codMes = substr($periodo, 4, 2);
@@ -220,23 +239,23 @@ class BoletaController extends Controller
                     // Vinculamos el DNI del archivo con el registro primario del usuario
                     $user = User::where('dni', $dni)->first();
                     if (!$user) {
-                        throw new Exception("Error de consistencia: No existe personal registrado con el DNI {$dni}.");
+                        throw new \Exception("No existe personal registrado con el DNI {$dni} en la institución.");
                     }
                     $userId = $user->id;
                 }
+
                 // --- CASO B: RECONOCIMIENTO DE FORMATO OFICIAL SUNAT PLAME (R08) ---
-                // Nomenclatura esperada: RUC_PERIODO_TIPODOC_DNI_r08.xml/.pdf (Ej: 20161572366_202606_1_75707785_r08.xml)
                 else {
                     $cleanName = str_replace(['.pdf', '.xml'], '', $originalName);
                     $parts = explode('_', $cleanName);
 
                     if (count($parts) < 4) {
-                        throw new Exception("El archivo no cumple con la nomenclatura estándar del PDT PLAME de la SUNAT.");
+                        throw new \Exception("El archivo no cumple con la nomenclatura estándar del PDT PLAME de la SUNAT.");
                     }
 
-                    $ruc = $parts[0];
-                    $periodo = $parts[1]; // Período fiscal (Ej: 202606)
-                    $numDoc = $parts[3];  // DNI embebido en la cadena de la SUNAT
+                    $ruc = trim($parts[0]);
+                    $periodo = trim($parts[1]); // Período fiscal (Ej: 202606)
+                    $numDoc = trim($parts[3]);  // 🎯 DNI embebido limpio de espacios
 
                     $anio = (int) substr($periodo, 0, 4);
                     $codMes = substr($periodo, 4, 2);
@@ -245,7 +264,7 @@ class BoletaController extends Controller
 
                     $user = User::where('dni', $numDoc)->first();
                     if (!$user) {
-                        throw new Exception("Omitido: El DNI {$numDoc} figura en la SUNAT pero no está de alta en la intranet.");
+                        throw new \Exception("El DNI {$numDoc} figura en el reporte de SUNAT pero no está dado de alta en la Intranet.");
                     }
                     $userId = $user->id;
                 }
@@ -258,11 +277,10 @@ class BoletaController extends Controller
                     ->exists();
 
                 if ($existeDuplicado) {
-                    throw new Exception("Operación abortada: Ya existe un registro de tipo '{$tipoDoc}' para el período {$mes}-{$anio}.");
+                    throw new \Exception("Ya existe una '{$tipoDoc}' registrada para este empleado en el período {$mes} - {$anio}.");
                 }
 
-                // ALMACENAMIENTO SEGURO: Guardamos el archivo físico aislado en la raíz privada
-                // Genera automáticamente rutas ordenadas en disco: storage/app/private/boletas/2026/Junio/
+                // ALMACENAMIENTO SEGURO
                 $path = $file->store("boletas/{$anio}/{$mes}", 'local');
 
                 // Inyección limpia del registro en la BD
@@ -272,25 +290,26 @@ class BoletaController extends Controller
                     'mes'      => $mes,
                     'anio'     => $anio,
                     'pdf_path' => $path,
-                    'status'   => 'Procesada', // Estado inicial por defecto de trazabilidad
+                    'status'   => 'Procesada',
                 ]);
 
                 $procesados++;
-            } catch (Exception $e) {
-                // RESILIENCIA: Si un archivo falla, capturamos el log de error pero NO detenemos la ejecución del resto del lote
+            } catch (\Exception $e) {
+                // Capturamos el error específico sin detener el resto del bucle foreach
                 $errores[] = "Archivo [{$originalName}]: " . $e->getMessage();
             }
         }
 
-        // CONTROL DE RETORNO INTERACTIVO: Si hubo advertencias, se las enviamos a la UI para listarlas en un panel
+        // 🎯 CONTROL DE RETORNO PARA INERTIA (Uso de variables Flash explícitas de Sesión)
         if (count($errores) > 0) {
+            $request->session()->flash('flash.error_masivo', $errores); // Forzamos la inyección en la sesión compartida
+
             return back()->with([
-                'success' => "Inyección parcial: Se procesaron con éxito {$procesados} documentos.",
-                'error_masivo' => $errores
+                'success' => "Inyección parcial finalizada. Se procesaron con éxito {$procesados} documentos laborales.",
             ]);
         }
 
-        return redirect()->route('boletas.index')->with('success', "¡Lote procesado con éxito! Se han inyectado {$procesados} documentos laborales de forma correcta.");
+        return redirect()->route('boletas.index')->with('success', "¡Excelente! El lote se procesó por completo. Se han inyectado {$procesados} documentos laborales de forma correcta.");
     }
 
     /**
@@ -310,8 +329,12 @@ class BoletaController extends Controller
         }
 
         // 2. DISPARADOR DE AUDITORÍA EN TIEMPO REAL
-        if ($boleta->user_id === $authUser->id && $boleta->status === 'Procesada') {
-            $boleta->update(['status' => 'Vista']); // El documento pasa oficialmente a estado leído
+        // El documento pasa a "Vista" únicamente si el dueño lo abre y está en 'Procesada' o 'Notificada'
+        if ($boleta->user_id === $authUser->id && in_array($boleta->status, ['Procesada', 'Notificada'])) {
+            $boleta->update([
+                'status' => 'Vista',
+                'read_at' => now() // 👈 Guardamos el hito real e inmutable de lectura
+            ]);
         }
 
         $isXml = str_ends_with(strtolower($boleta->pdf_path), '.xml');
@@ -328,9 +351,11 @@ class BoletaController extends Controller
             'anio' => $boleta->anio,
             'status' => $boleta->status,
             'created_at' => $boleta->created_at ? $boleta->created_at->toIso8601String() : null, // Hito 1: Carga
-            'read_at' => ($boleta->status !== 'Procesada' && $boleta->updated_at) ? $boleta->updated_at->toIso8601String() : null, // Hito 2: Lectura
-            'signed_at' => $boleta->signed_at ? \Illuminate\Support\Carbon::parse($boleta->signed_at)->toIso8601String() : null, // Hito 3: Firma
+            // Solo exponemos la fecha de lectura si el estado real es "Vista", "Firmada" o "Observada"
+            'read_at' => $boleta->read_at ? $boleta->read_at->toIso8601String() : null,
+            'signed_at'   => $boleta->signed_at ? \Carbon\Carbon::parse($boleta->signed_at)->toISOString() : null,
             'observation_message' => $boleta->observation_message,
+            'notified_at' => $boleta->notified_at ? \Carbon\Carbon::parse($boleta->notified_at)->toISOString() : null,
             'is_xml' => $isXml,
             'pdf_url' => "/boletas/{$boleta->id}/descargar-raw",
             'puede_firmar' => $puedeFirmar,
@@ -363,22 +388,6 @@ class BoletaController extends Controller
 
         // Servimos el archivo en crudo respetando el aislamiento de la raíz de Laravel
         return response()->file(storage_path('app/' . $boleta->pdf_path));
-    }
-
-    /**
-     * PROCESO DISPARADOR DE NOTIFICACIONES (Alertas de Aliento)
-     * * Ejecuta o prepara el envío automatizado de correos o alertas de recordatorio
-     * para el personal que tiene firmas de conformidad pendientes de firmar.
-     */
-    public function notificar(Boleta $boleta)
-    {
-        $boleta->load('user');
-
-        // INFRAESTRUCTURA DE TELEMETRÍA FUTURA:
-        // Aquí se acoplará el Jobs/Queue para despachar Mail o notificaciones Push por SMS.
-        // Mail::to($boleta->user->email)->send(new BoletaEmitidaMail($boleta));
-
-        return back()->with('success', 'Se ha despachado una alerta de recordatorio al correo electrónico institucional de ' . $boleta->user->first_name);
     }
 
     /**
@@ -457,7 +466,11 @@ class BoletaController extends Controller
             'signed_at' => now(),
             'observation_message' => null // Limpieza automática de reclamos previos si los hubiera tenido
         ]);
+        if (is_null($boleta->read_at)) {
+            $updateData['read_at'] = now();
+        }
 
+        $boleta->update($updateData);
         return back()->with('success', 'Has otorgado tu firma de conformidad digital a este documento correctamente.');
     }
 
@@ -798,27 +811,38 @@ class BoletaController extends Controller
     }
 
     // 1. Método para el Botón de Notificar Boleta
-    public function notificarPersonal(Request $request, $userId, $boletaId)
+    public function notificarPersonal(Request $request, $id)
     {
-        $user = User::findOrFail($userId);
-        $boleta = Boleta::findOrFail($boletaId);
+        try {
+            $boleta = Boleta::with('user')->findOrFail($id);
+            $user = $boleta->user;
 
-        // Disparamos el Correo 1
-        $user->notify(new BoletaDisponibleNotification($boleta));
+            if (!$user || !$user->email) {
+                return back()->with('error', 'El empleado asignado no tiene un correo electrónico válido.');
+            }
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Notificación de boleta enviada con éxito.'
-        ]);
+            // 1. Lanzamos el envío vía Microsoft Graph API
+            $user->notify(new BoletaDisponibleNotification($boleta));
+
+            // 2. 🔥 ACTUALIZACIÓN OPERATIVA: Guardamos estado y auditoría de tiempo
+            $boleta->update([
+                'status' => 'Notificada',
+                'notified_at' => now(), // Captura año, mes, día, hora y segundo actual
+            ]);
+
+            return back()->with('success', 'Notificación de boleta enviada con éxito.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Error en la infraestructura: ' . $e->getMessage());
+        }
     }
 
     // 2. Método de prueba para el Botón de Enviar Credenciales
     public function enviarCredencialesPrueba(Request $request, $userId)
     {
         $user = User::findOrFail($userId);
-        
+
         // Simulamos una contraseña temporal por ahora
-        $passwordProvisional = 'Andino2026*'; 
+        $passwordProvisional = 'Andino2026*';
 
         // Disparamos el Correo 2
         $user->notify(new CredencialesCreadasNotification($passwordProvisional));

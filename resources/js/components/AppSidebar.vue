@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { Globe, MailCheck, LifeBuoy, LayoutGrid, Users, FileSpreadsheet, UserSquare2 } from '@lucide/vue'; // Importamos UserSquare2 para "Mis Boletas"
+import { Globe, MailCheck, LifeBuoy, LayoutGrid, Users, FileSpreadsheet, Settings, Briefcase, UserSquare2 } from '@lucide/vue'; // Importamos UserSquare2 para "Mis Boletas"
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -42,28 +42,47 @@ const mainNavItems: NavItem[] = [
 ];
 
 if (authUser) {
-    // 1. CONTROL DE VISIBILIDAD GESTIÓN GENERAL: Solo visible para Admin y RRHH (/boletas)
+    // 1. GRUPO: BOLETAS DE PAGO (Condicional o Desplegable)
     if (isAdminOrRRHH) {
         mainNavItems.push({
             title: 'Boletas de Pago',
-            href: boletasIndexRoute().url, // Historial general del plantel
             icon: FileSpreadsheet,
+            items: [
+                { title: 'Dashboard Boletas', href:  '/boletas/empleados'},
+                { title: 'Boletas Empleados', href: boletasIndexRoute().url }, // Ruta de ejemplo
+                { title: 'Mis Boletas',       href: '/mis-boletas' }
+            ]
+        });
+    } else {
+        // Si es un empleado común, solo ve su enlace plano sin desplegables
+        mainNavItems.push({
+            title: 'Mis Boletas',
+            href: '/mis-boletas',
+            icon: UserSquare2,
         });
     }
 
-    // 2. ACCESO UNIVERSAL: "Mis Boletas" privado visible para TODOS los roles de la institución (/mis-boletas)
-    mainNavItems.push({
-        title: 'Mis Boletas',
-        href: '/mis-boletas', // Ruta privada de firma
-        icon: UserSquare2,
-    });
-
-    // 3. GESTIÓN DE USUARIOS: Restrictivo solo para Admin y RRHH (/users)
+    // 2. GRUPO: PLANILLA (Solo para Admin y RRHH)
     if (isAdminOrRRHH) {
         mainNavItems.push({
-            title: 'Mis Empleados',
-            href: '/users',
-            icon: Users,
+            title: 'Planilla',
+            icon: Briefcase,
+            items: [
+                { title: 'Mis Empleados', href: '/users' },
+                { title: 'Asistencias',  href: '/asistencias' }
+            ]
+        });
+    }
+
+    // 3. GRUPO: ADMINISTRACIÓN (Solo para Admin y RRHH)
+    if (isAdminOrRRHH) {
+        mainNavItems.push({
+            title: 'Administración',
+            icon: Settings,
+            items: [
+                { title: 'Requerimientos', href: '/requerimientos' },
+                { title: 'Configuraciones', href: '/configuracion' }
+            ]
         });
     }
 }

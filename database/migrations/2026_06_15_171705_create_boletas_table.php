@@ -27,12 +27,13 @@ return new class extends Migration
             $table->string('pdf_path'); 
 
             // Flujo de control de estados mejorado
-            $table->enum('status', ['Procesada', 'Vista', 'Firmada', 'Observada'])->default('Procesada');
+            $table->enum('status', ['Procesada', 'Notificada', 'Vista', 'Firmada', 'Observada'])->default('Procesada');
             
             // Auditoría de firmas e incidencias
             $table->timestamp('signed_at')->nullable(); // Fecha y hora exacta de la firma de conformidad
             $table->text('observation_message')->nullable(); // Mensaje detallado si el profesor observa la boleta
-            
+            $table->timestamp('read_at')->nullable(); // Fecha y hora exacta en que el profesor abrió la boleta
+            $table->timestamp('notified_at')->nullable(); // Fecha y hora exacta en que se notificó al profesor sobre la boleta
             $table->timestamps();
         });
     }

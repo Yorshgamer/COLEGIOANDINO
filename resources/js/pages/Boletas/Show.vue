@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { Head, Link, usePage, router } from '@inertiajs/vue3';
-import { FileText, Download, X, PenTool, AlertTriangle, CheckCircle2 } from '@lucide/vue';
-import SignatureCanvas from '@/components/SignatureCanvas.vue'; 
-import ObservationModal from '@/components/ObservationModal.vue'; 
+import { FileText, Download, X, PenTool, AlertTriangle, CheckCircle2, Send } from '@lucide/vue';
+import SignatureCanvas from '@/components/SignatureCanvas.vue';
+import ObservationModal from '@/components/ObservationModal.vue';
+import ConfirmSignModal from '@/components/ConfirmSignModal.vue';
 
 interface EmpleadoPayload {
     nombre_completo: string;
@@ -16,15 +17,15 @@ interface BoletaPayload {
     type: 'Boleta Mensual' | 'Gratificación' | 'CTS' | 'Otro';
     mes: string;
     anio: number;
-    status: 'Procesada' | 'Vista' | 'Firmada' | 'Observada';
-    created_at: string;        
-    read_at: string | null;     
+    status: 'Procesada' | 'Notificada' | 'Vista' | 'Firmada' | 'Observada'; created_at: string;
+    read_at: string | null;
     signed_at: string | null;
+    notified_at: string | null;
     observation_message: string | null;
     is_xml: boolean;
     pdf_url: string;
-    puede_firmar: boolean; 
-    signature_path_usuario: boolean; 
+    puede_firmar: boolean;
+    signature_path_usuario: boolean;
     empleado: EmpleadoPayload;
 }
 
@@ -46,12 +47,12 @@ const page = usePage();
 const authUser = computed(() => (page.props.auth as any).user);
 
 const showSignatureModal = ref(false);
+const showConfirmModal = ref(false);
 const showObservationModal = ref(false);
 
 // 🎯 HASH DE RENDERIZADO REACTIVO PARA EL IFRAME
-// Cambiará automáticamente cuando el estado mute, forzando la recarga del documento físico
+// Se refrescará limpiamente cada vez que cambie el prop inyectado por Laravel
 const iframeKey = computed(() => `${props.boleta.status}_${props.boleta.signed_at ?? 'none'}`);
-
 const formatTimestamp = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-PE', {
         day: '2-digit',
@@ -67,20 +68,20 @@ const pdfUrl = computed(() => `/boletas/${props.boleta.id}/pdf`);
 
 const handleSignAction = () => {
     if (props.boleta.signature_path_usuario) {
-        if (confirm('¿Declaras tu absoluta conformidad con los montos y conceptos expuestos en esta boleta y deseas estampar tu firma digital?')) {
-            router.post(`/boletas/${props.boleta.id}/firmar`, {}, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    // Sincronizamos las propiedades locales tras la mutación directa en base registrada
-                    props.boleta.status = 'Firmada';
-                    props.boleta.puede_firmar = false;
-                    props.boleta.signed_at = new Date().toISOString();
-                }
-            });
-        }
+        // 🔥 Reemplazamos el confirm() abriendo nuestro componente modular
+        showConfirmModal.value = true;
     } else {
         showSignatureModal.value = true;
     }
+};
+
+const executeSignatureFromShow = () => {
+    router.post(`/boletas/${props.boleta.id}/firmar`, {}, {
+        preserveScroll: true,
+        onSuccess: () => {
+            showConfirmModal.value = false;
+        }
+    });
 };
 
 const submitSignatureAndSign = (base64Data: string) => {
@@ -90,35 +91,50 @@ const submitSignatureAndSign = (base64Data: string) => {
         preserveScroll: true,
         onSuccess: () => {
             showSignatureModal.value = false;
-            props.boleta.status = 'Firmada';
-            props.boleta.puede_firmar = false;
-            props.boleta.signature_path_usuario = true;
-            // Estampamos el timestamp local. Esto altera de inmediato la iframeKey y refresca el PDF
-            props.boleta.signed_at = new Date().toISOString();
         }
     });
 };
 
 const handleObservationSuccess = () => {
     showObservationModal.value = false;
-    props.boleta.status = 'Observada';
 };
+const isNotifying = ref(false); // Para controlar un estado de carga (loading)
+
+const sendNotificationFromShow = () => {
+    isNotifying.value = true;
+
+    router.post(`/boletas/${props.boleta.id}/notificar`, {}, {
+        preserveScroll: true,
+        onSuccess: (page) => {
+            isNotifying.value = false;
+            // Sincronizamos los datos del visor en caliente con la respuesta del backend
+        },
+        onError: () => {
+            isNotifying.value = false;
+        }
+    });
+};
+
 </script>
 
 <template>
+
     <Head :title="`${boleta.type} - ${boleta.mes} ${boleta.anio}`" />
 
     <div class="flex flex-col xl:flex-row gap-6 p-6 h-full w-full max-w-[1600px] mx-auto items-stretch">
 
         <div class="w-full xl:w-[400px] shrink-0 flex flex-col gap-4">
-            <div class="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 flex flex-col justify-between h-full shadow-xs space-y-6">
+            <div
+                class="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 flex flex-col justify-between h-full shadow-xs space-y-6">
 
                 <div class="space-y-1">
                     <div class="flex items-center justify-between">
                         <span :class="['px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded-md border',
                             boleta.status === 'Firmada' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-900/50' :
-                            boleta.status === 'Observada' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/50' :
-                            'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/50'
+                                boleta.status === 'Observada' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/50' :
+                                    // 🚀 Color exclusivo para el estado Notificada
+                                    boleta.status === 'Notificada' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-900/50' :
+                                        'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/50'
                         ]">
                             {{ boleta.status }}
                         </span>
@@ -131,12 +147,14 @@ const handleObservationSuccess = () => {
                 </div>
 
                 <div class="relative pl-6 space-y-6 border-l-2 border-neutral-100 dark:border-neutral-800 ml-3">
+
                     <div class="relative">
                         <div class="absolute -left-[31px] top-0 p-1 bg-white dark:bg-neutral-900 rounded-full">
-                            <CheckCircle2 class="size-4 text-blue-500 bg-white dark:bg-neutral-900 rounded-full" />
+                            <CheckCircle2 class="size-4 rounded-full bg-white dark:bg-neutral-900 text-blue-500" />
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Notificada / Cargada</span>
+                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Cargada en Servidor
+                                (Minka Tech)</span>
                             <span class="text-[10px] font-mono text-neutral-400 mt-0.5">
                                 {{ boleta.created_at ? formatTimestamp(boleta.created_at) : 'Sin registro' }}
                             </span>
@@ -145,35 +163,59 @@ const handleObservationSuccess = () => {
 
                     <div class="relative">
                         <div class="absolute -left-[31px] top-0 p-1 bg-white dark:bg-neutral-900 rounded-full">
-                            <CheckCircle2 :class="['size-4 rounded-full bg-white dark:bg-neutral-900', boleta.status !== 'Procesada' ? 'text-blue-500' : 'text-neutral-200 dark:text-neutral-800']" />
+                            <CheckCircle2
+                                :class="['size-4 rounded-full bg-white dark:bg-neutral-900', boleta.notified_at ? 'text-indigo-500' : 'text-neutral-200 dark:text-neutral-800']" />
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Vista en Plataforma</span>
+                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Notificada al
+                                Outlook</span>
                             <span class="text-[10px] font-mono text-neutral-400 mt-0.5">
-                                {{ boleta.read_at ? formatTimestamp(boleta.read_at) : 'Pendiente de lectura' }}
+                                {{ boleta.notified_at ? formatTimestamp(boleta.notified_at) : 'Pendiente de envío institucional' }}
                             </span>
                         </div>
                     </div>
 
                     <div class="relative">
                         <div class="absolute -left-[31px] top-0 p-1 bg-white dark:bg-neutral-900 rounded-full">
-                            <CheckCircle2 :class="['size-4 rounded-full bg-white dark:bg-neutral-900', boleta.status === 'Firmada' ? 'text-green-500' : boleta.status === 'Observada' ? 'text-red-500' : 'text-neutral-200 dark:text-neutral-800']" />
+                            <CheckCircle2
+                                :class="['size-4 rounded-full bg-white dark:bg-neutral-900', boleta.read_at ? 'text-sky-500' : 'text-neutral-200 dark:text-neutral-800']" />
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Conformidad Firmada</span>
+                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">Vista en
+                                Plataforma</span>
                             <span class="text-[10px] font-mono text-neutral-400 mt-0.5">
-                                {{ boleta.signed_at ? formatTimestamp(boleta.signed_at) : 'Esperando visado digital' }}
+                                {{ boleta.read_at ? formatTimestamp(boleta.read_at) : 'Pendiente de lectura por el docente' }}
                             </span>
                         </div>
                     </div>
+
+                    <div class="relative">
+                        <div class="absolute -left-[31px] top-0 p-1 bg-white dark:bg-neutral-900 rounded-full">
+                            <CheckCircle2
+                                :class="['size-4 rounded-full bg-white dark:bg-neutral-900', boleta.status === 'Firmada' ? 'text-green-500' : boleta.status === 'Observada' ? 'text-red-500' : 'text-neutral-200 dark:text-neutral-800']" />
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">
+                                {{ boleta.status === 'Observada' ? 'Documento Observado / Reclamo' : 'Conformidad Firmada' }}
+                            </span>
+                            <span class="text-[10px] font-mono text-neutral-400 mt-0.5">
+                                {{ boleta.signed_at ? formatTimestamp(boleta.signed_at) : 'Esperando visado digital obligatorio' }}
+                            </span>
+                        </div>
+                    </div>
+
                 </div>
 
-                <div class="border border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl p-4 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col items-center justify-center min-h-[110px] relative overflow-hidden">
+                <div
+                    class="border border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl p-4 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col items-center justify-center min-h-[110px] relative overflow-hidden">
                     <template v-if="boleta.status === 'Firmada'">
-                        <div class="bg-white p-2 rounded-lg shadow-inner flex items-center justify-center border border-neutral-200">
-                            <img :src="`/boletas/${boleta.id}/trabajador-firma`" alt="Firma Electrónica Autorizada" class="h-14 object-contain max-w-full block" />
+                        <div
+                            class="bg-white p-2 rounded-lg shadow-inner flex items-center justify-center border border-neutral-200">
+                            <img :src="`/boletas/${boleta.id}/trabajador-firma`" alt="Firma Electrónica Autorizada"
+                                class="h-14 object-contain max-w-full block" />
                         </div>
-                        <div class="absolute bottom-1 right-2 text-[8px] font-mono text-neutral-400">Huella: {{ boleta.empleado.dni }}</div>
+                        <div class="absolute bottom-1 right-2 text-[8px] font-mono text-neutral-400">Huella: {{
+                            boleta.empleado.dni }}</div>
                     </template>
                     <template v-else-if="boleta.status === 'Observada'">
                         <span class="text-[10px] font-bold text-red-500 uppercase flex items-center gap-1 mb-1">
@@ -189,70 +231,102 @@ const handleObservationSuccess = () => {
                 </div>
 
                 <div class="border-t pt-4 space-y-2">
-                    <span class="text-[9px] font-bold uppercase tracking-wider text-neutral-400">Asignación Laboral</span>
+                    <span class="text-[9px] font-bold uppercase tracking-wider text-neutral-400">Asignación
+                        Laboral</span>
                     <div class="flex flex-col">
                         <span class="text-xs font-bold text-neutral-800 dark:text-neutral-200">
                             {{ boleta.empleado.nombre_completo }}
                         </span>
-                        <span class="text-[11px] font-mono text-neutral-400 mt-0.5">DNI: {{ boleta.empleado.dni }}</span>
+                        <span class="text-[11px] font-mono text-neutral-400 mt-0.5">DNI: {{ boleta.empleado.dni
+                            }}</span>
                     </div>
                 </div>
 
+                <template
+                    v-if="authUser?.roles?.includes('Administrador') || authUser?.roles?.includes('Recursos Humanos')">
+                    <div v-if="boleta.status !== 'Firmada'" class="border-t pt-4">
+                        <button type="button" @click="sendNotificationFromShow" :disabled="isNotifying" :class="['w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors shadow-2xs',
+                            isNotifying ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-800 dark:text-neutral-500' :
+                                boleta.status === 'Notificada'
+                                    ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        ]">
+                            <Send :class="['size-3.5', isNotifying ? 'animate-pulse' : '']" />
+                            <span>
+                                {{ isNotifying ? 'Comunicando con Azure...' : (boleta.status === 'Notificada' ? 'Volver a Notificar(Reenviar)' : 'Notificar al Correo del Docente') }}
+                            </span>
+                        </button>
+                    </div>
+                </template>
+
                 <div class="border-t pt-4 flex flex-col gap-2">
-                    <a :href="`/boletas/${boleta.id}/descargar`" class="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-4 py-2.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 shadow-2xs hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors">
+                    <a :href="`/boletas/${boleta.id}/descargar`"
+                        class="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-4 py-2.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 shadow-2xs hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors">
                         <Download class="size-3.5" /> Descargar PDF Oficial
                     </a>
 
                     <template v-if="boleta.puede_firmar">
-                        <button type="button" @click="handleSignAction" class="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 text-white px-4 py-2.5 text-xs font-bold shadow-sm hover:bg-green-500 transition-colors">
+                        <button type="button" @click="handleSignAction"
+                            class="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 text-white px-4 py-2.5 text-xs font-bold shadow-sm hover:bg-green-500 transition-colors">
                             <PenTool class="size-3.5" /> Firmar Conformidad Digital
                         </button>
-                        <button type="button" @click="showObservationModal = true" class="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/20 px-4 py-2 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors">
+                        <button type="button" @click="showObservationModal = true"
+                            class="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/20 px-4 py-2 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors">
                             Observar / Solicitar Revisión
                         </button>
                     </template>
 
-                    <Link :href="authUser && (authUser.roles.includes('Administrador') || authUser.roles.includes('Recursos Humanos')) ? '/boletas' : '/mis-boletas'" class="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-medium text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 text-center mt-1">
+                    <Link
+                        :href="authUser && (authUser.roles.includes('Administrador') || authUser.roles.includes('Recursos Humanos')) ? '/boletas' : '/mis-boletas'"
+                        class="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-medium text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 text-center mt-1">
                         Regresar al Historial
                     </Link>
                 </div>
             </div>
         </div>
 
-        <div class="flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 overflow-hidden shadow-sm flex flex-col min-h-[500px] lg:min-h-0">
-            <div class="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-3 flex justify-between items-center shrink-0">
+        <div
+            class="flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 overflow-hidden shadow-sm flex flex-col min-h-[500px] lg:min-h-0">
+            <div
+                class="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-3 flex justify-between items-center shrink-0">
                 <div class="flex items-center gap-2">
                     <FileText class="size-4 text-blue-500" />
                     <span class="text-xs font-mono font-bold text-neutral-700 dark:text-neutral-300 truncate max-w-md">
                         {{ boleta.type }} — {{ boleta.mes }} {{ boleta.anio }}
                     </span>
                 </div>
-                <Link :href="authUser && (authUser.roles.includes('Administrador') || authUser.roles.includes('Recursos Humanos')) ? '/boletas' : '/mis-boletas'" class="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">
+                <Link
+                    :href="authUser && (authUser.roles.includes('Administrador') || authUser.roles.includes('Recursos Humanos')) ? '/boletas' : '/mis-boletas'"
+                    class="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">
                     <X class="size-4" />
                 </Link>
             </div>
 
-            <iframe 
-                :key="iframeKey"
-                :src="`${pdfUrl}#toolbar=1&navpanes=0`" 
-                class="w-full h-full flex-1 border-none bg-neutral-100 dark:bg-neutral-950" 
-                title="Visor de Boletas Colegio Andino"
-            ></iframe>
+            <iframe :key="iframeKey" :src="`${pdfUrl}#toolbar=1&navpanes=0`"
+                class="w-full h-full flex-1 border-none bg-neutral-100 dark:bg-neutral-950"
+                title="Visor de Boletas Colegio Andino"></iframe>
         </div>
 
-        <div v-if="showSignatureModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-            <div class="w-full max-w-lg shadow-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6">
+        <div v-if="showSignatureModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+            <div
+                class="w-full max-w-lg shadow-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6">
                 <div class="space-y-0.5 mb-4">
-                    <h3 class="text-base font-bold text-neutral-900 dark:text-neutral-50 flex items-center gap-2 uppercase tracking-tight">
+                    <h3
+                        class="text-base font-bold text-neutral-900 dark:text-neutral-50 flex items-center gap-2 uppercase tracking-tight">
                         <PenTool class="size-4 text-amber-500" /> Registrar Firma Digital
                     </h3>
-                    <p class="text-xs text-neutral-400">Plasma tu trazo dentro del recuadro para archivarlo en tu cuenta y proceder con el visado.</p>
+                    <p class="text-xs text-neutral-400">Plasma tu trazo dentro del recuadro para archivarlo en tu cuenta
+                        y
+                        proceder con el visado.</p>
                 </div>
                 <SignatureCanvas @save="submitSignatureAndSign" @cancel="showSignatureModal = false" />
             </div>
         </div>
 
-        <ObservationModal :open="showObservationModal" :boleta-id="boleta.id" @close="showObservationModal = false" @success="handleObservationSuccess" />
+        <ObservationModal :open="showObservationModal" :boleta-id="boleta.id" @close="showObservationModal = false"
+            @success="handleObservationSuccess" />
 
+        <ConfirmSignModal :open="showConfirmModal" @close="showConfirmModal = false" @confirm="executeSignatureFromShow" />
     </div>
 </template>

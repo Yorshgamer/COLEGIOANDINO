@@ -3,11 +3,27 @@
 use App\Http\Controllers\BoletaController;
 use App\Http\Controllers\ProfileSignatureController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\WebController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-Route::inertia('/', 'Welcome')->name('home');
+// --- RUTAS PÚBLICAS (EXTERNAS AL LOGIN) ---
+Route::get('/', [WebController::class, 'home'])->name('home');
+Route::get('/presentacion', [WebController::class, 'presentacion'])->name('web.presentacion');
+Route::get('/iglesia-metodista', [WebController::class, 'iglesiaMetodista'])->name('web.iglesia_metodista');
+Route::get('/mision-vision', [WebController::class, 'misionVision'])->name('web.mision_vision');
+Route::get('/historia', [WebController::class, 'historia'])->name('web.historia');
+Route::get('/orientacion', [WebController::class, 'orientacion'])->name('web.orientacion');
+Route::get('/capellania', [WebController::class, 'capellania'])->name('web.capellania');
+Route::get('/coordinacion', [WebController::class, 'coordinacion'])->name('web.coordinacion');
+Route::get('/psicologia', [WebController::class, 'psicologia'])->name('web.psicologia');
+Route::get('/actividades', [WebController::class, 'actividades'])->name('web.actividades');
+Route::get('/admision', [WebController::class, 'admision'])->name('web.admision');
+Route::get('/matricula', [WebController::class, 'matricula'])->name('web.matricula');
+Route::get('/contacto', [WebController::class, 'contacto'])->name('web.contacto');
+Route::get('/servicio', [WebController::class, 'servicio'])->name('web.servicio');
 
+// --- RUTAS PROTEGIDAS (SISTEMA INTERNO) ---
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
 
@@ -15,6 +31,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/profile/signature', [ProfileSignatureController::class, 'update'])->name('profile.signature.update');
     // Rutas del CRUD de Usuarios protegidas por el permiso de Spatie
     Route::post('users/{id}/restore', [UserController::class, 'restore'])->name('users.restore');
+    Route::post('/users/{id}/regenerar-credenciales', [UserController::class, 'regenerarCredenciales'])->name('users.regenerar_credenciales');
     Route::resource('users', UserController::class)
         ->middleware('can:gestionar-usuarios');
 
@@ -33,10 +50,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/mis-boletas', [BoletaController::class, 'misBoletas'])->name('boletas.mis_boletas');
     Route::get('/boletas/create', [BoletaController::class, 'create'])->name('boletas.create'); // Nueva vista de carga masiva
     Route::post('/boletas/carga-masiva', [BoletaController::class, 'storeMasivo'])->name('boletas.store_masivo'); // Procesamiento parser
-
+    Route::post('/boletas/{id}/notificar', [BoletaController::class, 'notificarPersonal']);
     Route::get('/boletas/{boleta}', [BoletaController::class, 'show'])->name('boletas.show');
     Route::delete('/boletas/{boleta}', [BoletaController::class, 'destroy'])->name('boletas.destroy');
-    Route::post('/boletas/{boleta}/notificar', [BoletaController::class, 'notificar'])->name('boletas.notificar');
     Route::post('/boletas/{boleta}/firmar', [BoletaController::class, 'firmar'])->name('boletas.firmar');
     Route::post('/boletas/{boleta}/observar', [BoletaController::class, 'observar'])->name('boletas.observar');
     Route::get('/boletas/{boleta}/descargar-raw', [BoletaController::class, 'descargarRaw'])->name('boletas.descargar_raw');
