@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BoletaController;
+use App\Http\Controllers\BoletinController;
 use App\Http\Controllers\ProfileSignatureController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WebController;
@@ -22,7 +23,12 @@ Route::get('/admision', [WebController::class, 'admision'])->name('web.admision'
 Route::get('/matricula', [WebController::class, 'matricula'])->name('web.matricula');
 Route::get('/contacto', [WebController::class, 'contacto'])->name('web.contacto');
 Route::get('/servicio', [WebController::class, 'servicio'])->name('web.servicio');
-
+Route::get('/trabaja-nosotros', [WebController::class, 'trabajaNosotros'])->name('web.trabaja_nosotros');
+Route::get('/social', [WebController::class, 'responsabilidadSocial'])->name('web.responsabilidad_social');
+Route::get('/galeria', [WebController::class, 'galeria'])->name('web.galeria');
+Route::get('/libro-de-reclamaciones', [WebController::class, 'libro'])->name('web.libro');
+Route::post('/libro-de-reclamaciones', [WebController::class, 'storeLibro'])->name('web.libro.store');
+Route::get('/boletines', [WebController::class, 'boletines'])->name('web.boletines');
 // --- RUTAS PROTEGIDAS (SISTEMA INTERNO) ---
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
@@ -41,7 +47,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'encargado' => 'Ing. Villena Ochoa Yorshyo Artemio',
             'area' => 'Área de Informática y Sistemas',
             'email' => 'sistemas@andino.edu.pe',
-            'whatsapp' => '+51964605500' // <-- Coloca aquí tu número real de soporte
+            'whatsapp' => '+51951855237' // 
         ]);
     })->name('soporte.index');
 
@@ -63,11 +69,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/boletas/{boleta}/descargar', [BoletaController::class, 'descargarPdf'])->name('boletas.descargar');
     Route::post('/profile/signature', [ProfileSignatureController::class, 'update'])->name('profile.signature.update');
 
-    // 🎯 AGREGA ESTA LÍNEA DEBAJO PARA CONECTAR EL RENDERIZADOR
     Route::get('/profile/signature/image', [ProfileSignatureController::class, 'renderImage'])->name('profile.signature.image');
     Route::get('/administracion/firma/sello', [ProfileSignatureController::class, 'renderAdminSignature'])->name('admin.signature.sello');
 
-    // 🎯 Endpoint para la Firma del Trabajador dueño de esta boleta
+    // boletines
+    // --- MÓDULO DE GESTIÓN DE BOLETINES ---
+    Route::get('/boletinesadm', [BoletinController::class, 'index'])->name('boletinesadm.index');
+    Route::post('/boletinesadm', [BoletinController::class, 'store'])->name('boletinesadm.store');
+    Route::put('/boletinesadm/{boletin}', [BoletinController::class, 'update'])->name('boletinesadm.update');
+    Route::delete('/boletinesadm/{boletin}', [BoletinController::class, 'destroy'])->name('boletinesadm.destroy');
 });
 
 require __DIR__ . '/settings.php';

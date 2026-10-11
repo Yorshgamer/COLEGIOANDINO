@@ -81,7 +81,8 @@ if (authUser) {
             icon: Settings,
             items: [
                 { title: 'Requerimientos', href: '/requerimientos' },
-                { title: 'Configuraciones', href: '/configuracion' }
+                { title: 'Configuraciones', href: '/configuracion' },
+                { title: 'Boletines', href: '/boletinesadm' }
             ]
         });
     }

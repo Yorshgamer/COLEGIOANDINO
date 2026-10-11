@@ -34,7 +34,7 @@ const orientationItems: MenuItem[] = [
 
 const directLinks = [
     { label: 'Admisión', icon: FileText, href: '/admision' },
-    { label: 'Boletín', icon: BookOpen, href: '#', badge: 'NUEVO' },
+    { label: 'Boletín', icon: BookOpen, href: 'boletines', badge: 'NUEVO' },
     { label: 'Matrículas', icon: null, href: '/matricula' },
     { label: 'Servicio', icon: null, href: '/servicio' },
     { label: 'Contacto', icon: Phone, href: '/contacto' },

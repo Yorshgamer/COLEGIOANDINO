@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import NavbarWeb from '@/components/web/NavbarWeb.vue';
 import FooterWeb from '@/components/web/FooterWeb.vue';
+import FacebookDrawer from '@/components/web/FacebookDrawer.vue'; // <-- Importar aquí
 
 </script>
 
@@ -11,5 +12,6 @@ import FooterWeb from '@/components/web/FooterWeb.vue';
             <slot />
         </main>
         <FooterWeb />
+        <FacebookDrawer />
     </div>
 </template>
